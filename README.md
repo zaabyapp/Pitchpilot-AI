@@ -1,4 +1,4 @@
-#PitchPilot AI
+# PitchPilot AI
 
 **AI Pitch Coach for Builders** — An interactive live AI agent that helps you practice pitching your product using real-time voice, video, and conversational feedback.
 
