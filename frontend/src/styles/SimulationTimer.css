@@ -1,0 +1,39 @@
+.simulation-timer {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.timer-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.timer-display .time {
+  font-size: 3rem;
+  font-weight: 700;
+}
+
+.timer-display .label {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.timer-bar {
+  background: rgba(255, 255, 255, 0.2);
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.timer-progress {
+  background: #4ade80;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s linear;
+}
