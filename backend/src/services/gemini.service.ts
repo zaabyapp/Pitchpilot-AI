@@ -28,13 +28,15 @@ Reglas:
 - Mantén las respuestas concisas y conversacionales.`;
 
 const ONBOARDING_QUESTIONS_EN = [
-  "Who are you pitching to today? (investor, potential user, or conference audience)",
-  "Got it. And roughly how long is your pitch? Let me know when you're ready to start.",
+  "Who are you pitching to today?",
+  "Tell me a bit more about that audience. What important characteristics should I know?",
+  "In what kind of context is this pitch happening? For example: a demo day, a conference talk, an investor meeting, or a product launch.",
 ];
 
 const ONBOARDING_QUESTIONS_ES = [
-  "¿A quién le vas a hacer el pitch hoy? (inversionista, usuario potencial, o audiencia de conferencia)",
-  "Entendido. ¿Y aproximadamente cuánto dura tu pitch? Dime cuando estés listo para comenzar.",
+  "¿A quién le vas a hacer el pitch hoy?",
+  "Cuéntame un poco más sobre esa audiencia. ¿Qué características importantes debo saber?",
+  "¿En qué contexto ocurre este pitch? Por ejemplo: un demo day, una conferencia, una reunión con inversionistas, o un lanzamiento de producto.",
 ];
 
 export class GeminiService {
@@ -78,12 +80,15 @@ export class GeminiService {
         pitchSession.audienceDescription = userMessage;
         sessionData.onboardingStep = 1;
         agentResponse = questions[1];
-      } else {
+      } else if (sessionData.onboardingStep === 1) {
+        sessionData.onboardingStep = 2;
+        agentResponse = questions[2];
+      } else if (sessionData.onboardingStep === 2) {
         pitchSession.status = 'simulation';
         await this.initializeModel(sessionId);
         agentResponse = language === 'es'
-          ? 'Perfecto. Tienes el piso. Adelante con tu pitch.'
-          : 'Perfect. The floor is yours. Go ahead with your pitch.';
+          ? `Perfecto. Vamos a comenzar tu simulación de pitch.\n\nA partir de este momento, actuaré como un miembro de la audiencia que describiste.\n\nMi objetivo es desafiar tu pitch con el tipo de preguntas que recibirías en una situación real.\n\nDesde el momento en que diga "comiencen", tendrás 45 segundos para hacer tu pitch. No tengo contexto previo sobre tu producto, igual que una audiencia real.\n\nAsegúrate de explicar claramente: el problema que resuelves, qué hace tu producto, para quién es, y por qué importa.\n\n¡Comencemos!` 
+          : `Great. We're about to start your pitch simulation.\n\nFrom this moment on, I will act as a member of the audience you described.\n\nMy goal is to challenge your pitch with the kinds of questions you might receive in a real situation.\n\nFrom the moment I say start, you will have 45 seconds to deliver your pitch. I have no prior context about your product, just like a real audience.\n\nMake sure your pitch clearly explains: the problem you are solving, what your product does, who it is for, and why it matters.\n\nLet's begin!`;
       }
     } else {
       agentResponse = await this.getChatResponse(sessionId, userMessage);
