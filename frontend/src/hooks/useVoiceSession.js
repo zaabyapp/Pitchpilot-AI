@@ -14,19 +14,26 @@ const WS_URL =
  *
  *   Gemini audio → backend → WebSocket → base64 PCM Int16 @24kHz
  *   → AudioContext @24kHz → scheduled playback
+ *
+ * @param {object} opts
+ * @param {function} opts.onEvent - called with phase_event, session_data, etc.
  */
-export function useVoiceSession() {
+export function useVoiceSession({ onEvent } = {}) {
   const [status, setStatus] = useState('idle'); // idle | connecting | active | error
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [transcript, setTranscript] = useState([]); // { role, text, timestamp }[]
 
   const wsRef = useRef(null);
-  const micStreamRef = useRef(null);    // raw MediaStream (audio tracks)
-  const inputCtxRef = useRef(null);     // AudioContext at 16kHz
-  const outputCtxRef = useRef(null);    // AudioContext at 24kHz
-  const processorRef = useRef(null);    // ScriptProcessorNode
-  const sourceRef = useRef(null);       // MediaStreamAudioSourceNode
-  const nextPlayTimeRef = useRef(0);    // scheduled end of last audio chunk
+  const micStreamRef = useRef(null);
+  const inputCtxRef = useRef(null);
+  const outputCtxRef = useRef(null);
+  const processorRef = useRef(null);
+  const sourceRef = useRef(null);
+  const nextPlayTimeRef = useRef(0);
   const speakingTimerRef = useRef(null);
+  const sessionStartRef = useRef(Date.now());
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent; // keep ref current without adding to dep arrays
 
   // ---------------------------------------------------------------------------
   // Audio playback
@@ -47,7 +54,6 @@ export function useVoiceSession() {
     (base64Data) => {
       const ctx = getOutputCtx();
 
-      // base64 → Uint8Array → Int16Array → Float32Array
       const binary = atob(base64Data);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -64,13 +70,11 @@ export function useVoiceSession() {
       src.buffer = buffer;
       src.connect(ctx.destination);
 
-      // Schedule gaplessly after the previous chunk
       const startAt = Math.max(nextPlayTimeRef.current, ctx.currentTime + 0.04);
       src.start(startAt);
       nextPlayTimeRef.current = startAt + buffer.duration;
 
       setIsAISpeaking(true);
-      // Clear speaking state after the last scheduled chunk finishes
       if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
       const msUntilDone = (nextPlayTimeRef.current - ctx.currentTime + 0.3) * 1000;
       speakingTimerRef.current = setTimeout(() => setIsAISpeaking(false), msUntilDone);
@@ -93,15 +97,12 @@ export function useVoiceSession() {
     });
     micStreamRef.current = stream;
 
-    // Creating an AudioContext at 16kHz causes the browser to internally
-    // resample the mic stream from its native rate to 16kHz.
     const ctx = new AudioContext({ sampleRate: 16000 });
     inputCtxRef.current = ctx;
 
     const source = ctx.createMediaStreamSource(stream);
     sourceRef.current = source;
 
-    // 4096 samples @ 16kHz ≈ 256 ms per chunk — a comfortable size for Gemini
     const processor = ctx.createScriptProcessor(4096, 1, 1);
     processorRef.current = processor;
 
@@ -109,15 +110,12 @@ export function useVoiceSession() {
       if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
       const float32 = e.inputBuffer.getChannelData(0);
-
-      // Float32 → PCM Int16
       const int16 = new Int16Array(float32.length);
       for (let i = 0; i < float32.length; i++) {
         const s = Math.max(-1, Math.min(1, float32[i]));
         int16[i] = s < 0 ? s * 32768 : s * 32767;
       }
 
-      // Int16 → base64 (chunked to avoid call-stack limits)
       const bytes = new Uint8Array(int16.buffer);
       let binary = '';
       const step = 8192;
@@ -130,8 +128,23 @@ export function useVoiceSession() {
     };
 
     source.connect(processor);
-    // Must connect to destination to keep ScriptProcessorNode alive in Chrome
     processor.connect(ctx.destination);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Transcript helpers
+  // ---------------------------------------------------------------------------
+
+  const addTranscriptEntry = useCallback((role, text, timestamp) => {
+    const entry = { role, text, timestamp: timestamp ?? Date.now() - sessionStartRef.current };
+    setTranscript((prev) => {
+      // If last entry is same role and was partial, merge; otherwise append
+      const last = prev[prev.length - 1];
+      if (last && last.role === role && !last.isFinal) {
+        return [...prev.slice(0, -1), { ...last, text: last.text + text }];
+      }
+      return [...prev, entry];
+    });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -141,6 +154,8 @@ export function useVoiceSession() {
   const connect = useCallback(
     async ({ language = 'en' } = {}) => {
       setStatus('connecting');
+      setTranscript([]);
+      sessionStartRef.current = Date.now();
 
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
@@ -152,13 +167,30 @@ export function useVoiceSession() {
       ws.onmessage = async (event) => {
         try {
           const msg = JSON.parse(event.data);
+
           if (msg.type === 'ready') {
             await setupMicrophone();
             setStatus('active');
           } else if (msg.type === 'audio') {
             scheduleAudioChunk(msg.data);
+          } else if (msg.type === 'transcript') {
+            const role = msg.role === 'model' ? 'ai' : 'user';
+            addTranscriptEntry(role, msg.text, Date.now() - sessionStartRef.current);
+          } else if (msg.type === 'phase_event') {
+            onEventRef.current?.({ type: 'phase_event', event: msg.event });
+          } else if (msg.type === 'session_data') {
+            // Final authoritative transcript from backend
+            onEventRef.current?.({ type: 'session_data', transcript: msg.transcript });
           } else if (msg.type === 'turn_complete') {
-            // AI finished speaking — handled by the speaking timer
+            // Mark the last AI transcript entry as final
+            setTranscript((prev) => {
+              if (prev.length === 0) return prev;
+              const last = prev[prev.length - 1];
+              if (last.role === 'ai') {
+                return [...prev.slice(0, -1), { ...last, isFinal: true }];
+              }
+              return prev;
+            });
           } else if (msg.type === 'error') {
             console.error('[useVoiceSession] Server error:', msg.message);
             setStatus('error');
@@ -177,7 +209,7 @@ export function useVoiceSession() {
         setStatus('error');
       };
     },
-    [setupMicrophone, scheduleAudioChunk]
+    [setupMicrophone, scheduleAudioChunk, addTranscriptEntry]
   );
 
   const disconnect = useCallback(() => {
@@ -204,14 +236,27 @@ export function useVoiceSession() {
     setIsAISpeaking(false);
   }, []);
 
+  /**
+   * Inject a text message into the live Gemini session.
+   * Used to send <<SYSTEM_EVENT>> orchestration cues when timers expire.
+   */
+  const injectText = useCallback((text) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'inject_text', text }));
+    }
+  }, []);
+
   return {
     /** 'idle' | 'connecting' | 'active' | 'error' */
     status,
     /** true while Gemini audio is playing */
     isAISpeaking,
-    /** ref to the raw mic MediaStream — use to mute/unmute audio tracks */
+    /** ref to the raw mic MediaStream */
     micStream: micStreamRef,
+    /** accumulated transcript entries { role, text, timestamp, isFinal } */
+    transcript,
     connect,
     disconnect,
+    injectText,
   };
 }

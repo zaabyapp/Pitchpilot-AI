@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function NoFeedback({ onStartSession = () => {} }) {
+export default function NoFeedback({ onStartSession = () => {}, onNavInstructions = () => {}, onNavResources = () => {} }) {
   return (
     <div className="relative flex flex-col h-screen overflow-hidden bg-[#0B0B0F] text-slate-200 antialiased">
       {/* Header */}
@@ -15,8 +15,8 @@ export default function NoFeedback({ onStartSession = () => {} }) {
         </div>
         <div className="flex items-center gap-8">
           <nav className="hidden md:flex items-center gap-8">
-            <button className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
-            <button className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Resources</button>
+            <button onClick={onNavInstructions} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
+            <button onClick={onNavResources} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Resources</button>
             <span className="text-white text-sm font-semibold border-b-2 border-[#7c5cff] py-4 -mb-4">Reporting</span>
           </nav>
         </div>

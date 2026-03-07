@@ -12,6 +12,8 @@ export default function ResourceDetail({
   resource = defaultResource,
   onBack = () => {},
   onStartSession = () => {},
+  onNavInstructions = () => {},
+  onNavReporting = () => {},
 }) {
   return (
     <div className="flex flex-col min-h-screen bg-[#0B0B0F] text-slate-100">
@@ -26,9 +28,9 @@ export default function ResourceDetail({
           <h1 className="text-white text-xl font-bold tracking-tight">PitchPilot <span className="text-[#7C5CFF]">AI</span></h1>
         </div>
         <nav className="hidden md:flex items-center gap-8">
-          <button className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
+          <button onClick={onNavInstructions} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
           <span className="text-[#7C5CFF] text-sm font-semibold relative after:content-[''] after:absolute after:-bottom-[21px] after:left-0 after:right-0 after:h-[2px] after:bg-[#7C5CFF]">Resources</span>
-          <button className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Reporting</button>
+          <button onClick={onNavReporting} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Reporting</button>
         </nav>
         <div className="flex items-center gap-4">
           <button

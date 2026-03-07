@@ -34,6 +34,8 @@ const resources = [
 export default function BuilderResources({
   onStartSession = () => {},
   onSelectResource = () => {},
+  onNavInstructions = () => {},
+  onNavReporting = () => {},
 }) {
   return (
     <div className="flex flex-col min-h-screen bg-[#0B0B0F] text-slate-100">
@@ -49,9 +51,9 @@ export default function BuilderResources({
         </div>
         <div className="flex items-center gap-10">
           <nav className="hidden md:flex items-center gap-10">
-            <button className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
+            <button onClick={onNavInstructions} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
             <span className="text-[#7C5CFF] text-sm font-semibold underline underline-offset-8">Resources</span>
-            <button className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Reporting</button>
+            <button onClick={onNavReporting} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Reporting</button>
           </nav>
           <div className="flex items-center">
             <button

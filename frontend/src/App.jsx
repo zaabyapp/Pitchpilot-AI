@@ -6,134 +6,143 @@ import NoFeedback from './components/NoFeedback';
 import SessionTranscript from './components/SessionTranscript';
 import BuilderResources from './components/BuilderResources';
 import ResourceDetail from './components/ResourceDetail';
+import Instructions from './components/Instructions';
 
 function App() {
+  const [screen, setScreen] = useState('landing');
   const [language, setLanguage] = useState(null);
-  const [sessionStarted, setSessionStarted] = useState(false);
-  const [showReport, setShowReport] = useState(false);
-  const [showTranscript, setShowTranscript] = useState(false);
-  const [showResources, setShowResources] = useState(false);
-  const [selectedResource, setSelectedResource] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [hasCompletedSession, setHasCompletedSession] = useState(false);
+  const [selectedResource, setSelectedResource] = useState(null);
+  const [sessionData, setSessionData] = useState(null); // { transcript, questionsAnswered, ... }
+
+  const handleStartSession = () => {
+    setScreen('landing');
+    setLanguage(null);
+  };
 
   const handleLanguageSelect = (lang) => {
     setLanguage(lang);
-    setSessionStarted(true);
-    setShowReport(false);
-    setShowTranscript(false);
-    setShowResources(false);
-    setSelectedResource(null);
-    setSessionId(`#${Date.now().toString(36).toUpperCase()}`);
+    const id = `#${Date.now().toString(36).toUpperCase()}`;
+    setSessionId(id);
+    setScreen('session');
   };
 
-  const handleSessionEnd = () => {
-    setSessionStarted(false);
-    setShowReport(true);
+  const handleSessionEnd = (data) => {
+    setSessionData(data);
     setHasCompletedSession(true);
+    setScreen('reporting');
   };
 
   const handleNewSession = () => {
-    setLanguage(null);
-    setSessionStarted(false);
-    setShowReport(false);
-    setShowTranscript(false);
-    setShowResources(false);
-    setSelectedResource(null);
-    setSessionId(null);
-  };
-
-  const handleStartSession = () => {
-    setShowReport(false);
-    setShowTranscript(false);
-    setShowResources(false);
-    setSelectedResource(null);
-    setLanguage(null);
-    setSessionStarted(false);
+    handleStartSession();
   };
 
   const handleViewTranscript = () => {
-    setShowTranscript(true);
+    setScreen('transcript');
   };
 
   const handleBackFromTranscript = () => {
-    setShowTranscript(false);
-  };
-
-  const handleExportTranscript = () => {
-    console.log('Export transcript clicked');
+    setScreen('reporting');
   };
 
   const handleSelectResource = (resource) => {
     setSelectedResource(resource);
+    setScreen('resource-detail');
   };
 
   const handleBackFromResourceDetail = () => {
-    setSelectedResource(null);
+    setScreen('resources');
   };
 
-  // Show resource detail
-  if (showResources && selectedResource) {
+  const navInstructions = () => setScreen('instructions');
+  const navResources = () => setScreen('resources');
+  const navReporting = () => setScreen('reporting');
+
+  if (screen === 'instructions') {
+    return (
+      <Instructions
+        onStartSession={handleStartSession}
+        onNavResources={navResources}
+        onNavReporting={navReporting}
+      />
+    );
+  }
+
+  if (screen === 'resource-detail') {
     return (
       <ResourceDetail
         resource={selectedResource}
         onBack={handleBackFromResourceDetail}
         onStartSession={handleStartSession}
+        onNavInstructions={navInstructions}
+        onNavReporting={navReporting}
       />
     );
   }
 
-  // Show resources list
-  if (showResources) {
+  if (screen === 'resources') {
     return (
       <BuilderResources
         onStartSession={handleStartSession}
         onSelectResource={handleSelectResource}
+        onNavInstructions={navInstructions}
+        onNavReporting={navReporting}
       />
     );
   }
 
-  // Show transcript view
-  if (showTranscript) {
+  if (screen === 'transcript') {
     return (
       <SessionTranscript
         sessionId={sessionId}
         date={new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+        transcript={sessionData?.transcript ?? []}
         onBack={handleBackFromTranscript}
-        onExport={handleExportTranscript}
       />
     );
   }
 
-  // Show report or no-feedback view
-  if (showReport) {
+  if (screen === 'reporting') {
     if (hasCompletedSession) {
       return (
         <FeedbackReport
           sessionId={sessionId}
           language={language}
+          sessionData={sessionData}
           onViewTranscript={handleViewTranscript}
           onNewSession={handleNewSession}
+          onNavInstructions={navInstructions}
+          onNavResources={navResources}
         />
-      );
-    } else {
-      return (
-        <NoFeedback onStartSession={handleStartSession} />
       );
     }
+    return (
+      <NoFeedback
+        onStartSession={handleStartSession}
+        onNavInstructions={navInstructions}
+        onNavResources={navResources}
+      />
+    );
   }
 
+  if (screen === 'session') {
+    return (
+      <PitchRecorder
+        language={language}
+        sessionId={sessionId}
+        onSessionEnd={handleSessionEnd}
+      />
+    );
+  }
+
+  // landing
   return (
-    <>
-      {!sessionStarted ? (
-        <LanguageSelector onSelectLanguage={handleLanguageSelect} />
-      ) : (
-        <PitchRecorder 
-          language={language}
-          onSessionEnd={handleSessionEnd}
-        />
-      )}
-    </>
+    <LanguageSelector
+      onSelectLanguage={handleLanguageSelect}
+      onNavInstructions={navInstructions}
+      onNavResources={navResources}
+    />
   );
 }
 

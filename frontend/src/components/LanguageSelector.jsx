@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function LanguageSelector({ onSelectLanguage }) {
+export default function LanguageSelector({ onSelectLanguage, onNavInstructions = () => {}, onNavResources = () => {} }) {
   const [language, setLanguage] = useState('English');
 
   return (
@@ -14,8 +14,8 @@ export default function LanguageSelector({ onSelectLanguage }) {
           <h2 className="text-slate-100 text-lg font-bold tracking-tight">PitchPilot AI</h2>
         </div>
         <nav className="flex items-center gap-8">
-          <a className="text-[#A1A1AA] hover:text-white text-sm font-medium transition-colors" href="#">Instructions</a>
-          <a className="text-[#A1A1AA] hover:text-white text-sm font-medium transition-colors" href="#">Resources</a>
+          <button onClick={onNavInstructions} className="text-[#A1A1AA] hover:text-white text-sm font-medium transition-colors">Instructions</button>
+          <button onClick={onNavResources} className="text-[#A1A1AA] hover:text-white text-sm font-medium transition-colors">Resources</button>
         </nav>
       </header>
 

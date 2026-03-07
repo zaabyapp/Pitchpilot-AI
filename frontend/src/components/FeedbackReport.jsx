@@ -116,9 +116,14 @@ export default function FeedbackReport({
   sessionId = '#82941-PK',
   language = 'en',
   feedbackData = defaultFeedbackData,
+  sessionData = null,
   onViewTranscript = () => {},
   onNewSession = () => {},
+  onNavInstructions = () => {},
+  onNavResources = () => {},
 }) {
+  // sessionData may contain { transcript, questionsAnswered, endedAt }
+  // feedbackData is the structured report (currently mock; will be AI-generated in future)
   const {
     score,
     level,
@@ -150,8 +155,10 @@ export default function FeedbackReport({
           <h2 className="text-white text-lg font-bold tracking-tight">PitchPilot <span className="text-[#7c5cff]">AI</span></h2>
         </div>
         <nav className="hidden md:flex items-center gap-8">
-          <button onClick={onNewSession} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">New Session</button>
+          <button onClick={onNavInstructions} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
+          <button onClick={onNavResources} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Resources</button>
           <span className="text-white text-sm font-semibold border-b-2 border-[#7c5cff] py-4 -mb-4">Reporting</span>
+          <button onClick={onNewSession} className="bg-[#7C5CFF] text-white text-sm font-bold px-5 py-2.5 rounded-md hover:bg-[#7C5CFF]/90 transition-all">New Session</button>
         </nav>
       </header>
 
@@ -193,14 +200,34 @@ export default function FeedbackReport({
               <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">{summary}</p>
             </div>
             <div className="flex flex-col gap-3 shrink-0">
-              <button className="flex items-center justify-center gap-2 h-11 px-6 bg-[#7c5cff] text-white text-sm font-bold rounded-xl hover:bg-[#7c5cff]/90 transition-all shadow-lg shadow-[#7c5cff]/20">
+              <button
+                onClick={() => window.print()}
+                className="flex items-center justify-center gap-2 h-11 px-6 bg-[#7c5cff] text-white text-sm font-bold rounded-xl hover:bg-[#7c5cff]/90 transition-all shadow-lg shadow-[#7c5cff]/20"
+              >
                 <span className="material-symbols-outlined text-sm">download</span>
                 Export Report
               </button>
-              <button className="flex items-center justify-center gap-2 h-11 px-6 bg-white/5 text-white text-sm font-bold rounded-xl hover:bg-white/10 transition-all border border-white/5">
+              <button
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({ title: 'PitchPilot AI Report', text: `Session ${sessionId} — Score: ${score}/100`, url: window.location.href });
+                  } else {
+                    navigator.clipboard.writeText(window.location.href).catch(() => {});
+                  }
+                }}
+                className="flex items-center justify-center gap-2 h-11 px-6 bg-white/5 text-white text-sm font-bold rounded-xl hover:bg-white/10 transition-all border border-white/5"
+              >
                 <span className="material-symbols-outlined text-sm">share</span>
-                Share Coach View
+                Share Report
               </button>
+              {sessionData?.questionsAnswered != null && (
+                <div className="flex items-center justify-center gap-2 h-11 px-6 bg-white/5 border border-white/5 rounded-xl">
+                  <span className="material-symbols-outlined text-sm text-[#7c5cff]">quiz</span>
+                  <span className="text-xs text-slate-400">
+                    {sessionData.questionsAnswered} question{sessionData.questionsAnswered !== 1 ? 's' : ''} answered
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

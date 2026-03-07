@@ -59,16 +59,74 @@ const defaultTranscript = [
   },
 ];
 
+/**
+ * Normalise a transcript entry coming from either:
+ * - the backend { role: 'ai'|'user', text, timestamp }
+ * - the legacy defaultTranscript format { role: 'ai'|'user', timestamp: string, text, highlights, tag }
+ */
+function normaliseEntry(entry, idx) {
+  const role = entry.role ?? (entry.speaker === 'ai' ? 'ai' : 'user');
+  const tsRaw = entry.timestamp;
+  // Backend timestamps are ms numbers; legacy are strings like "00:32"
+  let timestamp;
+  if (typeof tsRaw === 'number') {
+    const totalSec = Math.floor(tsRaw / 1000);
+    const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+    const s = (totalSec % 60).toString().padStart(2, '0');
+    timestamp = `${m}:${s}`;
+  } else {
+    timestamp = tsRaw ?? '00:00';
+  }
+  return { role, text: entry.text ?? '', timestamp, highlights: entry.highlights ?? [], tag: entry.tag ?? null, _key: idx };
+}
+
+function exportTranscriptTxt(sessionId, date, entries) {
+  const lines = [`PitchPilot AI — Session Transcript`, `Session: ${sessionId}  |  Date: ${date}`, ``, `${'─'.repeat(60)}`];
+  for (const e of entries) {
+    const speaker = e.role === 'ai' ? 'PitchPilot AI' : 'You';
+    lines.push(``, `[${e.timestamp}] ${speaker}:`, e.text);
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pitchpilot-transcript-${sessionId.replace('#', '')}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function copyTranscriptToClipboard(entries) {
+  const lines = [];
+  for (const e of entries) {
+    const speaker = e.role === 'ai' ? 'PitchPilot AI' : 'You';
+    lines.push(`[${e.timestamp}] ${speaker}: ${e.text}`);
+  }
+  navigator.clipboard.writeText(lines.join('\n\n')).catch(() => {});
+}
+
 export default function SessionTranscript({
   sessionId = '#82941-PK',
   date = 'Oct 24, 2023',
   transcript = defaultTranscript,
   onBack = () => {},
-  onExport = () => {},
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [copied, setCopied] = useState(false);
 
-  const filteredTranscript = transcript.filter((msg) =>
+  const normalisedTranscript = transcript.map(normaliseEntry);
+  const hasRealData = transcript.length > 0 && typeof transcript[0]?.timestamp === 'number';
+
+  const handleCopy = () => {
+    copyTranscriptToClipboard(normalisedTranscript);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExportTxt = () => {
+    exportTranscriptTxt(sessionId, date, normalisedTranscript);
+  };
+
+  const filteredTranscript = (hasRealData ? normalisedTranscript : transcript.map(normaliseEntry)).filter((msg) =>
     msg.text.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -160,7 +218,7 @@ export default function SessionTranscript({
           <div className="max-w-4xl mx-auto px-8 py-12 space-y-10">
             {filteredTranscript.map((msg, idx) => (
               <div
-                key={idx}
+                key={msg._key ?? idx}
                 className={`flex flex-col gap-2 max-w-[85%] ${
                   msg.role === 'user' ? 'items-end ml-auto' : ''
                 }`}
@@ -227,7 +285,14 @@ export default function SessionTranscript({
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={onExport}
+                onClick={handleCopy}
+                className="h-10 px-5 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl transition-all border border-white/5 flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">{copied ? 'check' : 'content_copy'}</span>
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <button
+                onClick={handleExportTxt}
                 className="h-10 px-5 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-xl transition-all border border-white/5 flex items-center gap-2"
               >
                 <span className="material-symbols-outlined text-sm">download</span>
