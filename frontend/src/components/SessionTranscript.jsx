@@ -1,64 +1,5 @@
 import React, { useState } from 'react';
 
-const defaultTranscript = [
-  {
-    role: 'ai',
-    timestamp: '00:00',
-    text: "Welcome, Alex. We're ready to begin your Seed Round pitch simulation for the Cloud Infrastructure sector. I'll be acting as a Senior Associate at a Tier 1 VC firm. Whenever you're ready, the floor is yours for your 3-minute opening.",
-    highlights: [],
-    tag: null,
-  },
-  {
-    role: 'user',
-    timestamp: '00:12',
-    text: "Thanks for having me. So, our tool basically helps developers do things faster by automating some of the stuff they don't like doing in the cloud. We've seen that teams are spending way too much time on manual configuration.",
-    highlights: [{ text: "our tool basically helps developers do things faster by automating some of the stuff they don't like doing in the cloud" }],
-    tag: { label: 'Vague Intro', type: 'warning' },
-  },
-  {
-    role: 'ai',
-    timestamp: '00:32',
-    text: 'Can you be more specific about the "stuff" you\'re automating? Are we talking about CI/CD pipelines, security patching, or full resource orchestration?',
-    highlights: [],
-    tag: null,
-  },
-  {
-    role: 'user',
-    timestamp: '00:45',
-    text: "It's specifically focused on the orchestration layer. We simplified the complex instruction manuals that run your software automatically. By doing this, we allow teams to ship 40% faster.",
-    highlights: [{ text: 'orchestration layer' }],
-    tag: { label: 'Strong Analogy', type: 'success' },
-  },
-  {
-    role: 'user',
-    timestamp: '00:58',
-    text: "The way we handle the Kubernetes manifest abstraction is what really sets us apart. We ensure that developers don't have to touch YAML files ever again while maintaining full visibility.",
-    highlights: [{ text: 'Kubernetes manifest abstraction' }],
-    tag: { label: 'Technical Jargon', type: 'warning' },
-  },
-  {
-    role: 'ai',
-    timestamp: '01:10',
-    text: "That sounds promising for dev-ops teams, but how does that translate into value for the CTO who's looking at the bottom line?",
-    highlights: [],
-    tag: null,
-  },
-  {
-    role: 'user',
-    timestamp: '01:20',
-    text: "Well, when you have that level of scalability, your security also becomes a lot tighter because humans aren't making manual errors in the config files. It's all about making sure that growth doesn't break things.",
-    highlights: [{ text: "your security also becomes a lot tighter because humans aren't making manual errors in the config files" }],
-    tag: { label: 'Logic Leap', type: 'warning' },
-  },
-  {
-    role: 'ai',
-    timestamp: '02:45',
-    text: "Thank you, Alex. I think I have a good grasp of the technical solution. Let's move on to your market strategy and how you plan to capture the enterprise segment in the next 18 months.",
-    highlights: [],
-    tag: null,
-  },
-];
-
 /**
  * Normalise a transcript entry coming from either:
  * - the backend { role: 'ai'|'user', text, timestamp }
@@ -105,16 +46,15 @@ function copyTranscriptToClipboard(entries) {
 }
 
 export default function SessionTranscript({
-  sessionId = '#82941-PK',
-  date = 'Oct 24, 2023',
-  transcript = defaultTranscript,
+  sessionId = '#------',
+  date = '',
+  transcript = [],
   onBack = () => {},
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
 
   const normalisedTranscript = transcript.map(normaliseEntry);
-  const hasRealData = transcript.length > 0 && typeof transcript[0]?.timestamp === 'number';
 
   const handleCopy = () => {
     copyTranscriptToClipboard(normalisedTranscript);
@@ -126,7 +66,7 @@ export default function SessionTranscript({
     exportTranscriptTxt(sessionId, date, normalisedTranscript);
   };
 
-  const filteredTranscript = (hasRealData ? normalisedTranscript : transcript.map(normaliseEntry)).filter((msg) =>
+  const filteredTranscript = normalisedTranscript.filter((msg) =>
     msg.text.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -216,6 +156,17 @@ export default function SessionTranscript({
         {/* Chat area */}
         <div className="flex-1 overflow-y-auto bg-[#0D0D12]">
           <div className="max-w-4xl mx-auto px-8 py-12 space-y-10">
+            {filteredTranscript.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+                <div className="size-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-slate-500 text-2xl">chat_bubble_outline</span>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-slate-400 font-medium">No transcript available</p>
+                  <p className="text-slate-600 text-sm">Complete a session to see the full conversation here.</p>
+                </div>
+              </div>
+            )}
             {filteredTranscript.map((msg, idx) => (
               <div
                 key={msg._key ?? idx}

@@ -22,6 +22,7 @@ export function useVoiceSession({ onEvent } = {}) {
   const [status, setStatus] = useState('idle'); // idle | connecting | active | error
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [transcript, setTranscript] = useState([]); // { role, text, timestamp }[]
+  const [reportData, setReportData] = useState(null); // { data, transcript } from backend
 
   const wsRef = useRef(null);
   const micStreamRef = useRef(null);
@@ -178,9 +179,10 @@ export function useVoiceSession({ onEvent } = {}) {
             addTranscriptEntry(role, msg.text, Date.now() - sessionStartRef.current);
           } else if (msg.type === 'phase_event') {
             onEventRef.current?.({ type: 'phase_event', event: msg.event });
-          } else if (msg.type === 'session_data') {
-            // Final authoritative transcript from backend
-            onEventRef.current?.({ type: 'session_data', transcript: msg.transcript });
+          } else if (msg.type === 'report') {
+            // AI-generated feedback report + final transcript from backend
+            setReportData({ data: msg.data, transcript: msg.transcript });
+            onEventRef.current?.({ type: 'report', data: msg.data, transcript: msg.transcript });
           } else if (msg.type === 'turn_complete') {
             // Mark the last AI transcript entry as final
             setTranscript((prev) => {
@@ -246,6 +248,31 @@ export function useVoiceSession({ onEvent } = {}) {
     }
   }, []);
 
+  /**
+   * Signal end of session to backend and stop mic/audio, but keep the WebSocket
+   * open to receive the AI-generated feedback report.
+   * Call disconnect() once the report arrives to finish cleanup.
+   */
+  const requestReport = useCallback(() => {
+    if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
+    // Tell backend to close Gemini and generate the report
+    try { wsRef.current?.send(JSON.stringify({ type: 'end_session' })); } catch (_) {}
+    // Stop mic and audio processing — no more audio needed
+    processorRef.current?.disconnect();
+    sourceRef.current?.disconnect();
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    inputCtxRef.current?.close();
+    outputCtxRef.current?.close();
+    processorRef.current = null;
+    sourceRef.current = null;
+    micStreamRef.current = null;
+    inputCtxRef.current = null;
+    outputCtxRef.current = null;
+    nextPlayTimeRef.current = 0;
+    setIsAISpeaking(false);
+    // WS stays open — backend will send { type: 'report' } then close
+  }, []);
+
   return {
     /** 'idle' | 'connecting' | 'active' | 'error' */
     status,
@@ -255,8 +282,11 @@ export function useVoiceSession({ onEvent } = {}) {
     micStream: micStreamRef,
     /** accumulated transcript entries { role, text, timestamp, isFinal } */
     transcript,
+    /** AI-generated report data once session ends, null until then */
+    reportData,
     connect,
     disconnect,
     injectText,
+    requestReport,
   };
 }

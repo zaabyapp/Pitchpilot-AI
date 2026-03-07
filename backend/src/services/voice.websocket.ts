@@ -1,5 +1,6 @@
 import WebSocket, { WebSocketServer } from 'ws';
 import http from 'http';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const GEMINI_LIVE_URL =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
@@ -133,6 +134,74 @@ interface ClientMessage {
   text?: string;
 }
 
+async function generateFeedbackReport(transcript: TranscriptEntry[], apiKey: string): Promise<object | null> {
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const transcriptText = transcript
+      .map((e) => {
+        const totalSec = Math.floor(e.timestamp / 1000);
+        const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+        const s = (totalSec % 60).toString().padStart(2, '0');
+        return `[${m}:${s}] ${e.role === 'ai' ? 'AI Coach' : 'Presenter'}: ${e.text}`;
+      })
+      .join('\n');
+
+    const prompt = `You are a pitch coach AI. Analyze this pitch simulation session transcript and generate a detailed, honest feedback report.
+
+SESSION TRANSCRIPT:
+${transcriptText || '(No transcript available — session ended early)'}
+
+Return ONLY a valid JSON object (no markdown, no code fences, no explanation) with this exact structure:
+{
+  "score": <integer 0-100, based on overall pitch quality>,
+  "level": "<exactly one of: Strong Pitch | Good Pitch | Needs Work>",
+  "summary": "<2-3 sentence overall assessment of the pitch performance>",
+  "whatWentWell": ["<specific strength observed in transcript>", "<another specific strength>"],
+  "businessRecommendations": [
+    {"title": "<recommendation title>", "description": "<what was missing or weak>", "suggestion": "<concrete actionable improvement>"},
+    {"title": "<recommendation title>", "description": "<what was missing or weak>", "suggestion": "<concrete actionable improvement>"}
+  ],
+  "confusingMoments": [
+    {"timestamp": "<MM:SS from transcript>", "title": "<brief label for what was confusing>", "description": "<why it was unclear to the audience>", "simplification": "<simpler way to phrase it>"}
+  ],
+  "topImprovements": [
+    {"title": "<area to improve>", "description": "<specific observation from transcript>", "actionable": "<one concrete action to take>", "color": "orange"},
+    {"title": "<area to improve>", "description": "<specific observation from transcript>", "actionable": "<one concrete action to take>", "color": "primary"},
+    {"title": "<area to improve>", "description": "<specific observation from transcript>", "actionable": "<one concrete action to take>", "color": "purple"}
+  ],
+  "deliveryMetrics": {"clarity": <0-100>, "energy": <0-100>, "pacing": <0-100>},
+  "videoPresence": {"eyeContact": <0-100>, "posture": <0-100>, "quote": "<one specific observation about presence or delivery style>"},
+  "voiceAnalysis": {"avgPitch": "<estimated e.g. 145 Hz or N/A>", "wpm": "<estimated words per minute e.g. 138 WPM>", "sentiment": "<e.g. 68% Positive>"},
+  "practicePrompts": [
+    {"title": "<practice exercise name>", "description": "<what to practice and why it helps>"},
+    {"title": "<practice exercise name>", "description": "<what to practice and why it helps>"},
+    {"title": "<practice exercise name>", "description": "<what to practice and why it helps>"}
+  ],
+  "actionItems": {
+    "communication": ["<action item>", "<action item>", "<action item>"],
+    "business": ["<action item>", "<action item>", "<action item>"],
+    "audience": ["<action item>", "<action item>", "<action item>"]
+  }
+}`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    // Extract JSON — handle potential markdown wrapping
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('[VoiceWS] No JSON found in report response');
+      return null;
+    }
+    return JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    console.error('[VoiceWS] Error generating feedback report:', err);
+    return null;
+  }
+}
+
 export function setupVoiceWebSocket(server: http.Server): void {
   const wss = new WebSocketServer({ server, path: '/ws/voice' });
 
@@ -149,10 +218,22 @@ export function setupVoiceWebSocket(server: http.Server): void {
     const transcript: TranscriptEntry[] = [];
     let currentAiTextBuffer = '';
     let pitchStartEmitted = false;
+    let reportSent = false;
 
     const sendToClient = (payload: object) => {
       if (clientWs.readyState === WebSocket.OPEN) {
         clientWs.send(JSON.stringify(payload));
+      }
+    };
+
+    const sendReport = async () => {
+      if (reportSent) return;
+      reportSent = true;
+      console.log('[VoiceWS] Generating feedback report for', transcript.length, 'transcript entries...');
+      const reportData = await generateFeedbackReport(transcript, apiKey);
+      sendToClient({ type: 'report', data: reportData, transcript });
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.close(1000, 'Session complete');
       }
     };
 
@@ -269,10 +350,8 @@ export function setupVoiceWebSocket(server: http.Server): void {
       });
 
       geminiWs.on('close', () => {
-        sendToClient({ type: 'session_data', transcript });
-        if (clientWs.readyState === WebSocket.OPEN) {
-          clientWs.close(1000, 'AI session ended');
-        }
+        // Generate and send feedback report, then close client connection
+        sendReport();
       });
     };
 
@@ -291,7 +370,6 @@ export function setupVoiceWebSocket(server: http.Server): void {
             })
           );
         } else if (msg.type === 'inject_text' && isInitialized && geminiWs?.readyState === WebSocket.OPEN) {
-          // Inject orchestration cue as a user turn into the live session
           geminiWs.send(
             JSON.stringify({
               clientContent: {
@@ -301,8 +379,13 @@ export function setupVoiceWebSocket(server: http.Server): void {
             })
           );
         } else if (msg.type === 'end_session') {
-          sendToClient({ type: 'session_data', transcript });
-          geminiWs?.close(1000, 'Session ended by user');
+          // Close Gemini connection — report will be generated in geminiWs.on('close')
+          if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+            geminiWs.close(1000, 'Session ended by user');
+          } else {
+            // Gemini already closed (e.g. session ended naturally), send report directly
+            sendReport();
+          }
         }
       } catch (err) {
         console.error('[VoiceWS] Error handling client message:', err);

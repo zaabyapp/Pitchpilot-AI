@@ -42,10 +42,11 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const coachRedirectRef = useRef(null);
   const fallbackBtnTimerRef = useRef(null);
   const simPhaseRef = useRef(simPhase);
-  const sessionDataRef = useRef({ transcript: [] });
+  const questionsAnsweredRef = useRef(questionsAnswered);
 
-  // Keep ref in sync for use inside callbacks
+  // Keep refs in sync for use inside callbacks
   simPhaseRef.current = simPhase;
+  questionsAnsweredRef.current = questionsAnswered;
 
   // ---------------------------------------------------------------------------
   // Event handler from the voice session
@@ -58,13 +59,26 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
         setShowFallbackBtn(false);
         if (fallbackBtnTimerRef.current) clearTimeout(fallbackBtnTimerRef.current);
       }
-    } else if (event.type === 'session_data') {
-      sessionDataRef.current = { transcript: event.transcript || [] };
+    } else if (event.type === 'report') {
+      // Report received — do full WS cleanup then navigate
+      disconnectRef.current?.();
+      onSessionEnd({
+        report: event.data,
+        transcript: event.transcript || [],
+        sessionId,
+        language,
+        questionsAnswered: questionsAnsweredRef.current,
+        endedAt: new Date().toISOString(),
+      });
     }
-  }, []);
+  }, [onSessionEnd, sessionId, language]);
 
-  const { status, isAISpeaking, micStream, transcript, connect, disconnect, injectText } =
+  const { status, isAISpeaking, micStream, transcript, connect, disconnect, injectText, requestReport } =
     useVoiceSession({ onEvent: handleEvent });
+
+  // Keep disconnect in a ref so handleEvent can call it without stale closure issues
+  const disconnectRef = useRef(disconnect);
+  disconnectRef.current = disconnect;
 
   // Track AI turn completions to show fallback button
   const prevTranscriptLen = useRef(0);
@@ -125,7 +139,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     return () => {
       cancelled = true;
       clearAllTimers();
-      disconnect();
+      disconnectRef.current?.();
       cameraStreamRef.current?.getTracks().forEach(t => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -212,17 +226,11 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
 
   const handleEndSession = useCallback(() => {
     clearAllTimers();
-    disconnect();
     cameraStreamRef.current?.getTracks().forEach(t => t.stop());
     setSimPhase(PHASE.DONE);
-    onSessionEnd({
-      transcript: sessionDataRef.current.transcript,
-      sessionId,
-      language,
-      questionsAnswered,
-      endedAt: new Date().toISOString(),
-    });
-  }, [disconnect, onSessionEnd, sessionId, language, questionsAnswered]);
+    // Send end_session + stop mic/audio, keep WS open to receive report
+    requestReport();
+  }, [requestReport]);
 
   const startPitchTimerManually = () => {
     if (simPhase !== PHASE.ONBOARDING) return;
@@ -284,6 +292,33 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+
+  // Loading screen while backend generates the report
+  if (simPhase === PHASE.DONE) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-[#0a0812] text-slate-100 gap-8">
+        <div className="relative size-20 flex items-center justify-center">
+          <span className="absolute inset-0 rounded-full bg-[#7c5cff]/20 animate-ping" />
+          <div className="size-16 rounded-full flex items-center justify-center bg-[#7c5cff]/10 border-2 border-[#7c5cff]">
+            <span className="material-symbols-outlined text-[#7c5cff] text-2xl">auto_awesome</span>
+          </div>
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-black text-white">Generating your report…</h2>
+          <p className="text-slate-400 text-sm">Analyzing your pitch with AI. This takes a few seconds.</p>
+        </div>
+        <div className="flex gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="size-2 rounded-full bg-[#7c5cff]/60 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col bg-[#0a0812] text-slate-100 overflow-hidden">

@@ -28,8 +28,10 @@ function App() {
     setScreen('session');
   };
 
-  const handleSessionEnd = (data) => {
-    setSessionData(data);
+  const handleSessionEnd = ({ report, transcript, sessionId: sid, language: lang, questionsAnswered, endedAt }) => {
+    setSessionData({ report, transcript, questionsAnswered, endedAt });
+    if (sid) setSessionId(sid);
+    if (lang) setLanguage(lang);
     setHasCompletedSession(true);
     setScreen('reporting');
   };
@@ -109,6 +111,7 @@ function App() {
         <FeedbackReport
           sessionId={sessionId}
           language={language}
+          feedbackData={sessionData?.report ?? null}
           sessionData={sessionData}
           onViewTranscript={handleViewTranscript}
           onNewSession={handleNewSession}
