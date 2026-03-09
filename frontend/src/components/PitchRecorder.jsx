@@ -8,9 +8,10 @@ const GRACE_PERIOD = 15;     // seconds after QA timer before hard inject
 const COACH_REDIRECT_DELAY = 45000; // ms to wait after coaching starts before redirect
 
 // Finite states for the simulation
-// onboarding → pitch_active → qa_active → qa_warning → coaching → done
+// onboarding → pitch_intro → pitch_active → qa_active → qa_warning → coaching → done
 const PHASE = {
   ONBOARDING: 'onboarding',
+  PITCH_INTRO: 'pitch_intro',   // AI finished onboarding, timer frozen — waiting to start
   PITCH_ACTIVE: 'pitch_active',
   QA_ACTIVE: 'qa_active',
   QA_WARNING: 'qa_warning',
@@ -30,8 +31,6 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const [qaTimeLeft, setQaTimeLeft] = useState(QA_DURATION);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [aiTurnCount, setAiTurnCount] = useState(0); // how many AI turns completed
-  const [showFallbackBtn, setShowFallbackBtn] = useState(false);
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
 
   const videoRef = useRef(null);
@@ -40,9 +39,10 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const qaTimerRef = useRef(null);
   const graceTimerRef = useRef(null);
   const coachRedirectRef = useRef(null);
-  const fallbackBtnTimerRef = useRef(null);
   const simPhaseRef = useRef(simPhase);
   const questionsAnsweredRef = useRef(questionsAnswered);
+  const injectTextRef = useRef(null);
+  const startPitchCountdownRef = useRef(null);
 
   // Keep refs in sync for use inside callbacks
   simPhaseRef.current = simPhase;
@@ -53,12 +53,8 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   // ---------------------------------------------------------------------------
 
   const handleEvent = useCallback((event) => {
-    if (event.type === 'phase_event' && event.event === 'pitch_start') {
-      if (simPhaseRef.current === PHASE.ONBOARDING) {
-        setSimPhase(PHASE.PITCH_ACTIVE);
-        setShowFallbackBtn(false);
-        if (fallbackBtnTimerRef.current) clearTimeout(fallbackBtnTimerRef.current);
-      }
+    if (event.type === 'phase_event' && event.phase === 'pitch_start') {
+      startPitchCountdownRef.current?.();
     } else if (event.type === 'report') {
       // Report received — do full WS cleanup then navigate
       disconnectRef.current?.();
@@ -76,19 +72,10 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const { status, isAISpeaking, micStream, transcript, connect, disconnect, injectText, requestReport } =
     useVoiceSession({ onEvent: handleEvent });
 
-  // Keep disconnect in a ref so handleEvent can call it without stale closure issues
+  // Keep disconnect + injectText in refs so handleEvent can call them without stale closure issues
   const disconnectRef = useRef(disconnect);
   disconnectRef.current = disconnect;
-
-  // Track AI turn completions to show fallback button
-  const prevTranscriptLen = useRef(0);
-  useEffect(() => {
-    const aiEntries = transcript.filter((e) => e.role === 'ai' && e.isFinal);
-    if (aiEntries.length > prevTranscriptLen.current) {
-      prevTranscriptLen.current = aiEntries.length;
-      setAiTurnCount(aiEntries.length);
-    }
-  }, [transcript]);
+  injectTextRef.current = injectText;
 
   // Track user responses during Q&A to count questions answered
   useEffect(() => {
@@ -98,19 +85,43 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     }
   }, [transcript, simPhase]);
 
-  // Show fallback "start pitch timer" button after AI has spoken ≥3 turns
-  // and we're still in onboarding (in case auto-detection misses the trigger phrase)
+  // ---------------------------------------------------------------------------
+  // Pitch timer: start countdown
+  // ---------------------------------------------------------------------------
+
+  const startPitchCountdown = useCallback(() => {
+    // Guard: only start if we haven't passed the pitch phase yet
+    const phase = simPhaseRef.current;
+    if (phase === PHASE.PITCH_ACTIVE || phase === PHASE.QA_ACTIVE ||
+        phase === PHASE.QA_WARNING || phase === PHASE.COACHING || phase === PHASE.DONE) return;
+
+    clearInterval(pitchTimerRef.current);
+    setSimPhase(PHASE.PITCH_ACTIVE);
+    let timeLeft = PITCH_DURATION;
+    setPitchTimeLeft(timeLeft);
+    pitchTimerRef.current = setInterval(() => {
+      timeLeft -= 1;
+      console.log('[PitchTimer] tick:', timeLeft);
+      setPitchTimeLeft(timeLeft);
+      if (timeLeft <= 0) {
+        clearInterval(pitchTimerRef.current);
+        injectTextRef.current?.('<<SYSTEM_EVENT>> pitch_timer_ended');
+        setSimPhase(PHASE.QA_ACTIVE);
+      }
+    }, 1000);
+  }, []);
+
+  // Keep startPitchCountdown in a ref so handleEvent (defined earlier) can call it
+  startPitchCountdownRef.current = startPitchCountdown;
+
+  // Transition ONBOARDING → PITCH_INTRO after 3 final AI turns
   useEffect(() => {
     if (simPhase !== PHASE.ONBOARDING) return;
-    if (aiTurnCount >= 3) {
-      fallbackBtnTimerRef.current = setTimeout(() => {
-        if (simPhaseRef.current === PHASE.ONBOARDING) {
-          setShowFallbackBtn(true);
-        }
-      }, 5000);
+    const finalAiTurns = transcript.filter((e) => e.role === 'ai' && e.isFinal).length;
+    if (finalAiTurns >= 3) {
+      setSimPhase(PHASE.PITCH_INTRO);
     }
-    return () => clearTimeout(fallbackBtnTimerRef.current);
-  }, [aiTurnCount, simPhase]);
+  }, [transcript, simPhase]);
 
   // ---------------------------------------------------------------------------
   // Camera + voice session init
@@ -150,30 +161,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     clearInterval(qaTimerRef.current);
     clearTimeout(graceTimerRef.current);
     clearTimeout(coachRedirectRef.current);
-    clearTimeout(fallbackBtnTimerRef.current);
   };
-
-  // ---------------------------------------------------------------------------
-  // Pitch timer (45s)
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (simPhase !== PHASE.PITCH_ACTIVE) return;
-
-    pitchTimerRef.current = setInterval(() => {
-      setPitchTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(pitchTimerRef.current);
-          injectText('<<SYSTEM_EVENT>> pitch_timer_ended');
-          setSimPhase(PHASE.QA_ACTIVE);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(pitchTimerRef.current);
-  }, [simPhase, injectText]);
 
   // ---------------------------------------------------------------------------
   // Q&A timer (5 min)
@@ -232,13 +220,6 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     requestReport();
   }, [requestReport]);
 
-  const startPitchTimerManually = () => {
-    if (simPhase !== PHASE.ONBOARDING) return;
-    setShowFallbackBtn(false);
-    injectText('The user is ready. Please start the 45-second pitch timer now.');
-    setSimPhase(PHASE.PITCH_ACTIVE);
-  };
-
   const toggleMute = () => {
     micStream.current?.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
     setIsMuted(prev => !prev);
@@ -269,6 +250,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
 
   const phaseLabel = {
     [PHASE.ONBOARDING]: language === 'es' ? 'Preparación' : 'Onboarding',
+    [PHASE.PITCH_INTRO]: language === 'es' ? 'Listo para pitchear' : 'Ready to Pitch',
     [PHASE.PITCH_ACTIVE]: language === 'es' ? 'Tu Pitch — 45s' : 'Your Pitch — 45s',
     [PHASE.QA_ACTIVE]: language === 'es' ? 'Sesión de Preguntas' : 'Q&A Session',
     [PHASE.QA_WARNING]: language === 'es' ? '¡Tiempo casi agotado!' : 'Time almost up!',
@@ -277,17 +259,24 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   }[simPhase];
 
   // Timer display config
+  const showPitchTimerFrozen = simPhase === PHASE.PITCH_INTRO;
   const showPitchTimer = simPhase === PHASE.PITCH_ACTIVE;
   const showQaTimer = simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING;
   const isWarning = simPhase === PHASE.QA_WARNING || (showPitchTimer && pitchTimeLeft <= 10);
 
   const timerColor = isWarning
     ? 'text-red-400 border-red-400/40 bg-red-500/10'
-    : showPitchTimer
+    : showPitchTimer || showPitchTimerFrozen
     ? 'text-orange-400 border-orange-400/40 bg-orange-500/10'
     : 'text-[#7c5cff] border-[#7c5cff]/40 bg-[#7c5cff]/10';
 
-  const timerValue = showPitchTimer ? formatTime(pitchTimeLeft) : showQaTimer ? formatTime(qaTimeLeft) : null;
+  const timerValue = showPitchTimerFrozen
+    ? formatTime(PITCH_DURATION)
+    : showPitchTimer
+    ? formatTime(pitchTimeLeft)
+    : showQaTimer
+    ? formatTime(qaTimeLeft)
+    : null;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -343,8 +332,8 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
             <span className="material-symbols-outlined text-base">timer</span>
             <span className="text-2xl font-black tabular-nums tracking-tight">{timerValue}</span>
             <span className="text-[10px] font-bold uppercase opacity-70">
-              {showPitchTimer
-                ? (language === 'es' ? 'Pitch' : 'Pitch')
+              {showPitchTimer || showPitchTimerFrozen
+                ? 'Pitch'
                 : (language === 'es' ? 'Q&A' : 'Q&A')}
             </span>
           </div>
@@ -360,16 +349,6 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
           </div>
         )}
 
-        {/* Fallback: manual pitch timer start */}
-        {showFallbackBtn && simPhase === PHASE.ONBOARDING && (
-          <button
-            onClick={startPitchTimerManually}
-            className="flex items-center gap-2 bg-orange-500/10 border border-orange-400/30 text-orange-400 text-xs font-bold px-4 py-2 rounded-xl hover:bg-orange-500/20 transition-all"
-          >
-            <span className="material-symbols-outlined text-sm">play_circle</span>
-            {language === 'es' ? 'Iniciar temporizador del pitch' : 'Start Pitch Timer'}
-          </button>
-        )}
       </header>
 
       {/* Main — video + AI panel */}
@@ -399,7 +378,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
             </div>
           )}
           {/* Pitch active indicator on video */}
-          {simPhase === PHASE.PITCH_ACTIVE && (
+          {(simPhase === PHASE.PITCH_INTRO || simPhase === PHASE.PITCH_ACTIVE) && (
             <div className="absolute top-4 right-4 bg-orange-500/20 border border-orange-400/40 px-3 py-1 rounded-lg flex items-center gap-1.5">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
@@ -471,6 +450,11 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                     ? (language === 'es' ? 'Iniciando sesión…' : 'Starting session…')
                     : (language === 'es' ? 'Responde las preguntas de preparación' : 'Answer the onboarding questions')
                 )}
+                {simPhase === PHASE.PITCH_INTRO && (
+                  isAISpeaking
+                    ? (language === 'es' ? 'El AI está hablando…' : 'AI is speaking…')
+                    : (language === 'es' ? 'El temporizador iniciará automáticamente…' : 'Timer will start automatically…')
+                )}
                 {simPhase === PHASE.PITCH_ACTIVE && (
                   isAISpeaking
                     ? (language === 'es' ? 'El AI está hablando…' : 'AI is speaking…')
@@ -506,6 +490,17 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                   : 'Real-time voice session • Gemini Live'}
               </p>
             </div>
+
+            {/* Manual start-timer button — visible in PITCH_INTRO phase */}
+            {simPhase === PHASE.PITCH_INTRO && !isAISpeaking && (
+              <button
+                onClick={startPitchCountdown}
+                className="flex items-center gap-2 bg-orange-500/10 border border-orange-400/40 text-orange-400 hover:bg-orange-500 hover:text-white px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-200"
+              >
+                <span className="material-symbols-outlined text-base">timer</span>
+                {language === 'es' ? 'Iniciar temporizador' : 'Start Timer'}
+              </button>
+            )}
 
             {isActive && !isMuted && (
               <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full">

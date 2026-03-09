@@ -5,6 +5,18 @@ const WS_URL =
     ? `wss://${window.location.host}/ws/voice`
     : 'ws://localhost:3001/ws/voice';
 
+// Filter out system events and noise from the visible transcript
+const isSystemMessage = (text) => {
+  const t = text.trim();
+  return (
+    t.includes('<<SYSTEM_EVENT>>') ||
+    t.includes('pitch_timer_ended') ||
+    t.includes('qa_timer_ended') ||
+    /^\d+(\s+\d+)*$/.test(t) ||
+    t.length < 4
+  );
+};
+
 /**
  * Manages a real-time voice session with the PitchPilot backend.
  *
@@ -28,6 +40,10 @@ export function useVoiceSession({ onEvent } = {}) {
   const micStreamRef = useRef(null);
   const inputCtxRef = useRef(null);
   const outputCtxRef = useRef(null);
+  // Transcript accumulation buffers — one entry per complete turn, not per chunk
+  const aiBufferRef = useRef('');
+  const userBufferRef = useRef('');
+  const userTurnStartRef = useRef(0);
   const processorRef = useRef(null);
   const sourceRef = useRef(null);
   const nextPlayTimeRef = useRef(0);
@@ -136,16 +152,15 @@ export function useVoiceSession({ onEvent } = {}) {
   // Transcript helpers
   // ---------------------------------------------------------------------------
 
-  const addTranscriptEntry = useCallback((role, text, timestamp) => {
-    const entry = { role, text, timestamp: timestamp ?? Date.now() - sessionStartRef.current };
-    setTranscript((prev) => {
-      // If last entry is same role and was partial, merge; otherwise append
-      const last = prev[prev.length - 1];
-      if (last && last.role === role && !last.isFinal) {
-        return [...prev.slice(0, -1), { ...last, text: last.text + text }];
-      }
-      return [...prev, entry];
-    });
+  const flushUserBuffer = useCallback(() => {
+    const text = userBufferRef.current.trim();
+    if (text && !isSystemMessage(text)) {
+      setTranscript((prev) => [
+        ...prev,
+        { role: 'user', text, timestamp: userTurnStartRef.current, isFinal: true },
+      ]);
+    }
+    userBufferRef.current = '';
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -157,6 +172,9 @@ export function useVoiceSession({ onEvent } = {}) {
       setStatus('connecting');
       setTranscript([]);
       sessionStartRef.current = Date.now();
+      aiBufferRef.current = '';
+      userBufferRef.current = '';
+      userTurnStartRef.current = 0;
 
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
@@ -175,24 +193,35 @@ export function useVoiceSession({ onEvent } = {}) {
           } else if (msg.type === 'audio') {
             scheduleAudioChunk(msg.data);
           } else if (msg.type === 'transcript') {
-            const role = msg.role === 'model' ? 'ai' : 'user';
-            addTranscriptEntry(role, msg.text, Date.now() - sessionStartRef.current);
+            const text = msg.text ?? '';
+            if (isSystemMessage(text)) return; // drop noise and system events
+
+            if (msg.role === 'model') {
+              // When AI starts speaking, flush any pending user speech
+              if (userBufferRef.current.trim()) flushUserBuffer();
+              // Accumulate AI chunk — committed to transcript on turn_complete
+              aiBufferRef.current += text;
+            } else {
+              // Accumulate user speech — flushed when AI starts speaking
+              if (!userBufferRef.current) {
+                userTurnStartRef.current = Date.now() - sessionStartRef.current;
+              }
+              userBufferRef.current += text;
+            }
           } else if (msg.type === 'phase_event') {
-            onEventRef.current?.({ type: 'phase_event', event: msg.event });
+            onEventRef.current?.({ type: 'phase_event', phase: msg.phase });
           } else if (msg.type === 'report') {
             // AI-generated feedback report + final transcript from backend
             setReportData({ data: msg.data, transcript: msg.transcript });
             onEventRef.current?.({ type: 'report', data: msg.data, transcript: msg.transcript });
           } else if (msg.type === 'turn_complete') {
-            // Mark the last AI transcript entry as final
-            setTranscript((prev) => {
-              if (prev.length === 0) return prev;
-              const last = prev[prev.length - 1];
-              if (last.role === 'ai') {
-                return [...prev.slice(0, -1), { ...last, isFinal: true }];
-              }
-              return prev;
-            });
+            // Commit the accumulated AI buffer as one final paragraph entry
+            const aiText = aiBufferRef.current.trim();
+            if (aiText && !isSystemMessage(aiText)) {
+              const ts = Date.now() - sessionStartRef.current;
+              setTranscript((prev) => [...prev, { role: 'ai', text: aiText, timestamp: ts, isFinal: true }]);
+            }
+            aiBufferRef.current = '';
           } else if (msg.type === 'error') {
             console.error('[useVoiceSession] Server error:', msg.message);
             setStatus('error');
@@ -211,7 +240,7 @@ export function useVoiceSession({ onEvent } = {}) {
         setStatus('error');
       };
     },
-    [setupMicrophone, scheduleAudioChunk, addTranscriptEntry]
+    [setupMicrophone, scheduleAudioChunk, flushUserBuffer]
   );
 
   const disconnect = useCallback(() => {

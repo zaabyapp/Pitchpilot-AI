@@ -5,7 +5,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 const GEMINI_LIVE_URL =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
-const SYSTEM_PROMPT_EN = `You are a pitch simulation AI for PitchPilot AI. You play two sequential roles: first a realistic simulation partner, then a coach. Follow this exact flow precisely.
+const SYSTEM_PROMPT_EN = `[SESSION LANGUAGE: ENGLISH - RESPOND ONLY IN ENGLISH AT ALL TIMES]
+
+You are a pitch simulation AI for PitchPilot AI. You play two sequential roles: first a realistic simulation partner, then a coach. Follow this exact flow precisely.
 
 === WHEN YOU RECEIVE: <<SYSTEM_EVENT>> session_started ===
 Immediately introduce yourself and begin the onboarding questions without waiting for the user to speak first.
@@ -26,10 +28,20 @@ After all three questions are answered, confirm clearly:
 Then explain:
 "From this point on, I'll act as the person you're pitching to. I'll ask realistic, challenging questions — the kind you'd face in a real situation. You'll have about 3 to 4 questions. You can see the timer on screen — the goal is to communicate your highest value clearly and quickly."
 
-Then say: "You have 45 seconds to pitch me. Tell me what your product does and what problem it solves. Ready? Your 45 seconds begin... now."
+IMPORTANT: The phrase "you can see the timer on screen" is a system trigger. You MUST include that exact phrase, word for word, as part of this explanation sentence.
+
+Say: "You have 45 seconds." Then — based on the context the user described in onboarding — generate ONE natural closing sentence before the trigger phrase:
+- If it's a product, app, or startup: "Tell me what your product does and what problem it solves."
+- If it's a job interview or personal presentation: "Tell me about yourself and what makes you stand out."
+- If it's a gym routine, lifestyle, or personal topic: "Tell me about it and why it matters to you or your audience."
+- If it's an academic presentation or school project: "Present your topic and explain why it's relevant."
+- For any other context: adapt naturally to what the user described — never default to "product" if it doesn't apply.
+Then close with EXACTLY this sentence and nothing else after it: "Ready? Your 45 seconds start now."
+
+CRITICAL SYSTEM TRIGGER: The software detects the exact string "your 45 seconds start now" to start the countdown timer. You MUST say this phrase word for word, every single time, with no variations. Do not say "your 45 seconds begin now", "your time starts now", or any other variation. The exact words are: "Ready? Your 45 seconds start now."
 
 === PHASE 2: PITCH LISTENING ===
-After saying "now", stop speaking. Listen silently. Do not interrupt. Wait for a <<SYSTEM_EVENT>> message.
+After saying "Your 45 seconds start now.", stop speaking immediately. Listen silently. Do not interrupt. Wait for a <<SYSTEM_EVENT>> message.
 
 === WHEN YOU RECEIVE: <<SYSTEM_EVENT>> pitch_timer_ended ===
 Say: "Thank you — your pitch time is up."
@@ -46,9 +58,13 @@ For CONFERENCE AUDIENCE: clarity of key message, relevance to audience, novelty,
 For MARKETING/INTERNAL: value proposition clarity, target audience definition, messaging differentiation, conversion hook, internal buy-in blockers.
 
 CRITICAL RULES FOR Q&A:
+- Ask only ONE question per turn. Never ask two questions in the same message.
+- After asking your question, stop immediately and wait for the user's complete response.
+- If you want to ask more, save it for the next turn after the user answers.
+- Keep each question to one sentence maximum.
 - NEVER say "That's a great answer", "Excellent!", "Very good!", "That sounds amazing", or any positive validation.
-- Acknowledge neutrally only: "I see.", "Okay.", "Understood.", "Interesting." — then probe deeper or move to the next question.
-- You may briefly paraphrase: "So you're saying [summary of their answer]. My next question is..."
+- Acknowledge neutrally only: "I see.", "Okay.", "Understood.", "Interesting." — then ask your one question.
+- You may briefly paraphrase: "So you're saying [summary]. [One question.]"
 - Remain fully in character as the audience type throughout. Do not slip into coach mode.
 - Do not reveal whether their answers were strong or weak.
 
@@ -73,11 +89,15 @@ End with exactly:
 === GENERAL RULES ===
 - Keep all responses concise — this is a spoken voice conversation, not text.
 - Act on <<SYSTEM_EVENT>> messages immediately and precisely as instructed.
+- IMPORTANT: Never repeat, acknowledge, or echo any message that contains <<SYSTEM_EVENT>>. These are internal system messages. Ignore them silently and continue naturally.
+- CRITICAL: Never interrupt the user while they are speaking. Always wait for the user to finish their complete thought before responding. Only speak when the user has clearly finished and there is silence. During the Q&A phase, give the user plenty of time to answer fully before asking the next question.
 - During pitch and Q&A phases you are the audience, not a coach.
 - Only switch to coach mode after receiving <<SYSTEM_EVENT>> qa_timer_ended.
 - Never offer feedback, coaching, or encouragement during the simulation phases.`;
 
-const SYSTEM_PROMPT_ES = `Eres un AI de simulación de pitch para PitchPilot AI. Tienes dos roles secuenciales: primero un compañero de simulación realista, luego un coach. Sigue este flujo exactamente.
+const SYSTEM_PROMPT_ES = `[IDIOMA DE SESIÓN: ESPAÑOL - RESPONDE ÚNICAMENTE EN ESPAÑOL EN TODO MOMENTO]
+
+Eres un AI de simulación de pitch para PitchPilot AI. Tienes dos roles secuenciales: primero un compañero de simulación realista, luego un coach. Sigue este flujo exactamente.
 
 === CUANDO RECIBAS: <<SYSTEM_EVENT>> session_started ===
 Preséntate inmediatamente y comienza las preguntas de onboarding sin esperar a que el usuario hable primero.
@@ -96,10 +116,20 @@ Después de las tres respuestas, confirma: "Entendido. Vamos a practicar tu pitc
 
 Luego explica: "A partir de ahora, actuaré como la persona a quien le estás haciendo el pitch. Haré preguntas realistas y desafiantes — del tipo que enfrentarías en una situación real. Tendrás unas 3 a 4 preguntas. Puedes ver el temporizador en pantalla — el objetivo es comunicar tu mayor valor de forma clara y rápida."
 
-Luego di: "Tienes 45 segundos para hacerme tu pitch. Dime qué hace tu producto y qué problema resuelve. ¿Listo? Tus 45 segundos comienzan... ahora."
+IMPORTANTE: La frase "puedes ver el temporizador en pantalla" es un disparador del sistema. DEBES incluir esa frase exacta, palabra por palabra, como parte de esta oración de explicación.
+
+Di: "Tienes 45 segundos." Luego — según el contexto que el usuario describió en el onboarding — genera UNA frase de cierre natural antes de la frase de activación:
+- Si es un producto, app o startup: "Dime qué hace tu producto y qué problema resuelve."
+- Si es una entrevista de trabajo o presentación personal: "Cuéntame sobre ti y qué te hace destacar."
+- Si es una rutina de gym, estilo de vida o tema personal: "Cuéntame al respecto y por qué es importante para ti o tu audiencia."
+- Si es una presentación académica o proyecto escolar: "Presenta tu tema y explica por qué es relevante."
+- Para cualquier otro contexto: adáptate naturalmente a lo que el usuario describió — nunca uses "producto" si no aplica.
+Luego termina con EXACTAMENTE esta oración y nada más después: "¿Listo? Tus 45 segundos comienzan ahora."
+
+DISPARADOR CRÍTICO DEL SISTEMA: El software detecta la cadena exacta "tus 45 segundos comienzan ahora" para iniciar el temporizador. DEBES decir esta frase palabra por palabra, sin variaciones. No digas "tus 45 segundos empiezan ahora", "tu tiempo comienza ahora", ni ninguna otra variación. Las palabras exactas son: "¿Listo? Tus 45 segundos comienzan ahora."
 
 === FASE 2: ESCUCHA DEL PITCH ===
-Después de decir "ahora", deja de hablar. Escucha en silencio. No interrumpas. Espera un mensaje <<SYSTEM_EVENT>>.
+Después de decir "Tus 45 segundos comienzan ahora.", deja de hablar inmediatamente. Escucha en silencio. No interrumpas. Espera un mensaje <<SYSTEM_EVENT>>.
 
 === CUANDO RECIBAS: <<SYSTEM_EVENT>> pitch_timer_ended ===
 Di: "Gracias — tu tiempo de pitch ha terminado."
@@ -110,7 +140,15 @@ Haz tu primera pregunta inmediatamente.
 === FASE 3: PREGUNTAS ===
 Haz 3-4 preguntas realistas y desafiantes según el tipo de audiencia establecido en el onboarding.
 
-CRÍTICO: NUNCA digas "¡Excelente respuesta!", "¡Muy bien!", "¡Suena increíble!" o cualquier validación positiva. Solo reconoce de forma neutral: "Ya veo.", "Entendido.", "Interesante." — luego sigue o profundiza. No reveles si sus respuestas fueron buenas o malas.
+CRÍTICO PARA FASE DE PREGUNTAS:
+- Haz solo UNA pregunta por turno. Nunca hagas dos preguntas en el mismo mensaje.
+- Después de hacer tu pregunta, detente y espera la respuesta completa del usuario.
+- Si quieres preguntar más, guárdalo para el siguiente turno después de que responda.
+- Cada pregunta debe ser de una oración máximo.
+- NUNCA digas "¡Excelente respuesta!", "¡Muy bien!", "¡Suena increíble!" o cualquier validación positiva.
+- Solo reconoce de forma neutral: "Ya veo.", "Entendido.", "Interesante." — luego haz tu única pregunta.
+- Puedes parafrasear brevemente: "Entonces dices que [resumen]. [Una pregunta.]"
+- No reveles si sus respuestas fueron buenas o malas.
 
 === CUANDO RECIBAS: <<SYSTEM_EVENT>> qa_timer_ended ===
 Cierra en tu rol de simulación (2-3 oraciones máximo), luego di:
@@ -126,8 +164,32 @@ Termina con: "Tu informe completo está siendo generado con retroalimentación d
 === REGLAS GENERALES ===
 - Respuestas concisas — es una conversación de voz.
 - Actúa sobre mensajes <<SYSTEM_EVENT>> de inmediato y con precisión.
+- IMPORTANTE: Nunca repitas, respondas ni hagas eco de ningún mensaje que contenga <<SYSTEM_EVENT>>. Son mensajes internos del sistema. Ignóralos silenciosamente y continúa de forma natural.
+- CRÍTICO: Nunca interrumpas al usuario mientras está hablando. Espera siempre a que el usuario termine su pensamiento completo antes de responder. Habla solo cuando el usuario haya terminado claramente y haya silencio. Durante la fase de preguntas, dale al usuario suficiente tiempo para responder completamente antes de hacer la siguiente pregunta.
 - Solo cambia a modo coach después de recibir <<SYSTEM_EVENT>> qa_timer_ended.
 - Nunca ofrezcas coaching durante las fases de simulación.`;
+
+// ---------------------------------------------------------------------------
+// Phase-detection helpers
+// ---------------------------------------------------------------------------
+
+// Exact trigger phrases that must appear in the AI output to start the pitch timer.
+// Checked word-by-word as outputTranscription chunks arrive — fires immediately on match.
+const PITCH_START_TRIGGER_EN = 'your 45 seconds start now';
+const PITCH_START_TRIGGER_ES = 'tus 45 segundos comienzan ahora';
+
+function isQaStartCue(lower: string): boolean {
+  return (
+    lower.includes('time is up') ||
+    lower.includes('se acabó el tiempo') ||
+    lower.includes('your pitch time') ||
+    lower.includes('tiempo de pitch') ||
+    lower.includes('thank you for your pitch') ||
+    lower.includes('gracias por tu pitch') ||
+    lower.includes("let's move to questions") ||
+    lower.includes('pasemos a las preguntas')
+  );
+}
 
 interface TranscriptEntry {
   role: 'ai' | 'user';
@@ -142,7 +204,7 @@ interface ClientMessage {
   text?: string;
 }
 
-async function generateFeedbackReport(transcript: TranscriptEntry[], apiKey: string): Promise<object | null> {
+async function generateFeedbackReport(transcript: TranscriptEntry[], apiKey: string, language = 'en'): Promise<object | null> {
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
@@ -156,7 +218,11 @@ async function generateFeedbackReport(transcript: TranscriptEntry[], apiKey: str
       })
       .join('\n');
 
-    const prompt = `You are a pitch coach AI. Analyze this pitch simulation session transcript and generate a detailed, honest feedback report.
+    const langInstruction = language === 'es'
+      ? 'Generate the entire report in Spanish. Every text field — including summary, descriptions, suggestions, labels, and actionable items — must be written in Spanish.'
+      : 'Generate the entire report in English.';
+
+    const prompt = `You are a pitch coach AI. Analyze this pitch simulation session transcript and generate a detailed, honest feedback report. ${langInstruction}
 
 SESSION TRANSCRIPT:
 ${transcriptText || '(No transcript available — session ended early)'}
@@ -223,9 +289,13 @@ export function setupVoiceWebSocket(server: http.Server): void {
     let geminiWs: WebSocket | null = null;
     let isInitialized = false;
     let sessionStartTime = Date.now();
+    let sessionLanguage = 'en';
     const transcript: TranscriptEntry[] = [];
     let currentAiTextBuffer = '';
-    let pitchStartEmitted = false;
+    let currentUserTextBuffer = '';
+    let currentUserTimestamp = 0;
+    let pitchStartFired = false;
+    let qaStartEmitted = false;
     let reportSent = false;
 
     const sendToClient = (payload: object) => {
@@ -238,7 +308,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
       if (reportSent) return;
       reportSent = true;
       console.log('[VoiceWS] Generating feedback report for', transcript.length, 'transcript entries...');
-      const reportData = await generateFeedbackReport(transcript, apiKey);
+      const reportData = await generateFeedbackReport(transcript, apiKey, sessionLanguage);
       sendToClient({ type: 'report', data: reportData, transcript });
       if (clientWs.readyState === WebSocket.OPEN) {
         clientWs.close(1000, 'Session complete');
@@ -268,6 +338,15 @@ export function setupVoiceWebSocket(server: http.Server): void {
             },
             inputAudioTranscription: {},
             outputAudioTranscription: {},
+            realtimeInputConfig: {
+              automaticActivityDetection: {
+                disabled: false,
+                startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+                endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
+                prefixPaddingMs: 500,
+                silenceDurationMs: 2000,
+              },
+            },
           },
         };
         geminiWs!.send(JSON.stringify(setupMsg));
@@ -293,21 +372,19 @@ export function setupVoiceWebSocket(server: http.Server): void {
 
           const { modelTurn, turnComplete, inputTranscription, outputTranscription } = msg.serverContent;
 
-          // AI speech transcription (output)
+          // AI speech transcription (output) — buffer text, detect triggers on turnComplete
           if (outputTranscription?.text) {
             currentAiTextBuffer += outputTranscription.text;
             sendToClient({ type: 'transcript', text: outputTranscription.text, role: 'model', isFinal: false });
           }
 
-          // User speech transcription (input)
+          // User speech transcription (input) — buffer chunks, push complete turn on turnComplete
           if (inputTranscription?.text) {
-            const entry: TranscriptEntry = {
-              role: 'user',
-              text: inputTranscription.text,
-              timestamp: Date.now() - sessionStartTime,
-            };
-            transcript.push(entry);
-            sendToClient({ type: 'transcript', text: inputTranscription.text, role: 'user', isFinal: !!inputTranscription.isFinal });
+            if (!currentUserTextBuffer) {
+              currentUserTimestamp = Date.now() - sessionStartTime;
+            }
+            currentUserTextBuffer += inputTranscription.text;
+            sendToClient({ type: 'transcript', text: inputTranscription.text, role: 'user', isFinal: false });
           }
 
           // Audio and text parts from model turn
@@ -327,29 +404,40 @@ export function setupVoiceWebSocket(server: http.Server): void {
           }
 
           if (turnComplete) {
-            // Finalize AI transcript entry
-            if (currentAiTextBuffer.trim()) {
-              const entry: TranscriptEntry = {
-                role: 'ai',
-                text: currentAiTextBuffer.trim(),
-                timestamp: Date.now() - sessionStartTime,
-              };
-              transcript.push(entry);
-
-              // Detect pitch start trigger phrase from AI
-              if (!pitchStartEmitted) {
-                const lower = currentAiTextBuffer.toLowerCase();
-                const hasPitchCue =
-                  (lower.includes('begin') || lower.includes('starts now') || lower.includes('start now')) &&
-                  (lower.includes('45') || lower.includes('seconds') || lower.includes('pitch') || lower.includes('now'));
-                if (hasPitchCue) {
-                  pitchStartEmitted = true;
-                  sendToClient({ type: 'phase_event', event: 'pitch_start' });
-                }
-              }
-
-              currentAiTextBuffer = '';
+            // Finalize user transcript entry
+            if (currentUserTextBuffer.trim()) {
+              transcript.push({
+                role: 'user',
+                text: currentUserTextBuffer.trim(),
+                timestamp: currentUserTimestamp,
+              });
+              currentUserTextBuffer = '';
+              currentUserTimestamp = 0;
             }
+
+            // Finalize AI transcript entry and check for phase triggers
+            if (currentAiTextBuffer.trim()) {
+              const aiText = currentAiTextBuffer.trim();
+              transcript.push({
+                role: 'ai',
+                text: aiText,
+                timestamp: Date.now() - sessionStartTime,
+              });
+
+              // Detect phase transitions AFTER AI finishes speaking
+              const lowerText = aiText.toLowerCase();
+              const pitchTrigger = sessionLanguage === 'es' ? PITCH_START_TRIGGER_ES : PITCH_START_TRIGGER_EN;
+
+              if (!pitchStartFired && lowerText.includes(pitchTrigger)) {
+                pitchStartFired = true;
+                console.log('[VoiceWS] Pitch trigger detected on turnComplete — firing pitch_start');
+                sendToClient({ type: 'phase_event', phase: 'pitch_start' });
+              } else if (pitchStartFired && !qaStartEmitted && isQaStartCue(lowerText)) {
+                qaStartEmitted = true;
+                sendToClient({ type: 'phase_event', phase: 'qa_start' });
+              }
+            }
+            currentAiTextBuffer = ''; // always reset so next turn starts clean
 
             sendToClient({ type: 'turn_complete' });
           }
@@ -374,7 +462,8 @@ export function setupVoiceWebSocket(server: http.Server): void {
         const msg: ClientMessage = JSON.parse(raw.toString());
 
         if (msg.type === 'init') {
-          connectToGemini(msg.language ?? 'en');
+          sessionLanguage = msg.language ?? 'en';
+          connectToGemini(sessionLanguage);
         } else if (msg.type === 'audio' && isInitialized && geminiWs?.readyState === WebSocket.OPEN) {
           geminiWs.send(
             JSON.stringify({

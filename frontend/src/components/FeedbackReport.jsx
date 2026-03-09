@@ -1,4 +1,82 @@
 import React from 'react';
+import Header from './Header';
+
+const TRANSLATIONS = {
+  en: {
+    noReport: 'Report not available',
+    noReportSub: 'Complete a pitch simulation to generate your personalized feedback report.',
+    startSession: 'Start a Session',
+    title: 'Pitch Performance Report',
+    subtitle: 'AI-generated analysis of your session',
+    level: 'Level',
+    scoreReady: 'Your pitch analysis is ready',
+    exportReport: 'Export Report',
+    shareReport: 'Share Report',
+    questionsAnswered: (n) => `${n} question${n !== 1 ? 's' : ''} answered`,
+    whatWentWell: 'What You Did Well',
+    businessRecs: 'Strategic Advisor: Business Recommendations',
+    confusingMoments: 'Strategic Advisor: What Was Confusing',
+    simplification: 'Simplification',
+    actionable: 'Actionable',
+    topImprovements: 'Top Improvements',
+    deliveryMetrics: 'Delivery Metrics',
+    videoPresence: 'Video Presence',
+    eyeContact: 'Eye Contact',
+    posture: 'Posture',
+    voiceAnalysis: 'Voice Analysis',
+    avgPitch: 'Average Pitch',
+    wpm: 'Words Per Minute',
+    sentimentBalance: 'Sentiment Balance',
+    practicePrompts: 'Recommended Practice Prompts',
+    actionItems: 'Action Items',
+    actionItemsSub: 'Your next steps to improve this pitch',
+    communicationFocus: 'Communication Focus',
+    businessFocus: 'Business Focus',
+    audienceImpact: 'Audience Impact',
+    viewTranscript: 'View Session Transcript',
+    viewTranscriptSub: 'Open full transcript and detailed analysis',
+    session: 'Session',
+    aiEngine: 'AI Analysis Engine',
+    newSession: 'New Session',
+  },
+  es: {
+    noReport: 'Informe no disponible',
+    noReportSub: 'Completa una simulación de pitch para generar tu informe personalizado.',
+    startSession: 'Iniciar Sesión',
+    title: 'Informe de Desempeño del Pitch',
+    subtitle: 'Análisis generado por IA de tu sesión',
+    level: 'Nivel',
+    scoreReady: 'Tu análisis del pitch está listo',
+    exportReport: 'Exportar Informe',
+    shareReport: 'Compartir Informe',
+    questionsAnswered: (n) => `${n} pregunta${n !== 1 ? 's' : ''} respondida${n !== 1 ? 's' : ''}`,
+    whatWentWell: 'Lo Que Hiciste Bien',
+    businessRecs: 'Asesor Estratégico: Recomendaciones de Negocio',
+    confusingMoments: 'Asesor Estratégico: Lo Que Fue Confuso',
+    simplification: 'Simplificación',
+    actionable: 'Accionable',
+    topImprovements: 'Principales Mejoras',
+    deliveryMetrics: 'Métricas de Presentación',
+    videoPresence: 'Presencia en Video',
+    eyeContact: 'Contacto Visual',
+    posture: 'Postura',
+    voiceAnalysis: 'Análisis de Voz',
+    avgPitch: 'Tono Promedio',
+    wpm: 'Palabras por Minuto',
+    sentimentBalance: 'Balance de Sentimiento',
+    practicePrompts: 'Ejercicios de Práctica Recomendados',
+    actionItems: 'Elementos de Acción',
+    actionItemsSub: 'Tus próximos pasos para mejorar este pitch',
+    communicationFocus: 'Enfoque en Comunicación',
+    businessFocus: 'Enfoque en Negocios',
+    audienceImpact: 'Impacto en la Audiencia',
+    viewTranscript: 'Ver Transcripción de la Sesión',
+    viewTranscriptSub: 'Abrir transcripción completa y análisis detallado',
+    session: 'Sesión',
+    aiEngine: 'Motor de Análisis IA',
+    newSession: 'Nueva Sesión',
+  },
+};
 
 export default function FeedbackReport({
   sessionId = '#------',
@@ -9,31 +87,31 @@ export default function FeedbackReport({
   onNewSession = () => {},
   onNavInstructions = () => {},
   onNavResources = () => {},
+  onNavReporting = () => {},
 }) {
-  // Loading state — report not yet available
+  const t = TRANSLATIONS[language] ?? TRANSLATIONS.en;
+
   if (!feedbackData) {
     return (
       <div className="relative flex flex-col min-h-screen overflow-hidden bg-[#0B0B0F] text-slate-200 antialiased">
-        <header className="flex items-center justify-between border-b border-white/5 px-8 py-3 bg-[#0B0B0F]/80 backdrop-blur-md z-30 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="text-[#7c5cff] size-8">
-              <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 42.4379C4 42.4379 14.0962 36.0744 24 41.1692C35.0664 46.8624 44 42.2078 44 42.2078L44 7.01134C44 7.01134 35.068 11.6577 24.0031 5.96913C14.0971 0.876274 4 7.27094 4 7.27094L4 42.4379Z" fill="currentColor" />
-              </svg>
-            </div>
-            <h2 className="text-white text-lg font-bold tracking-tight">PitchPilot <span className="text-[#7c5cff]">AI</span></h2>
-          </div>
-        </header>
+        <Header
+          activePage="reporting"
+          onNavInstructions={onNavInstructions}
+          onNavResources={onNavResources}
+          onNavReporting={onNavReporting}
+          onStartSession={onNewSession}
+          ctaLabel={t.newSession}
+        />
         <main className="flex-1 flex flex-col items-center justify-center gap-6 text-center px-8">
           <div className="size-16 rounded-full bg-[#7c5cff]/10 border border-[#7c5cff]/30 flex items-center justify-center">
             <span className="material-symbols-outlined text-[#7c5cff] text-2xl">analytics</span>
           </div>
           <div className="space-y-2">
-            <h2 className="text-2xl font-black text-white">Report not available</h2>
-            <p className="text-slate-400 text-sm max-w-sm">Complete a pitch simulation to generate your personalized feedback report.</p>
+            <h2 className="text-2xl font-black text-white">{t.noReport}</h2>
+            <p className="text-slate-400 text-sm max-w-sm">{t.noReportSub}</p>
           </div>
           <button onClick={onNewSession} className="bg-[#7C5CFF] text-white text-sm font-bold px-6 py-3 rounded-xl hover:bg-[#7C5CFF]/90 transition-all">
-            Start a Session
+            {t.startSession}
           </button>
         </main>
       </div>
@@ -66,23 +144,14 @@ export default function FeedbackReport({
 
   return (
     <div className="relative flex flex-col min-h-screen overflow-hidden bg-[#0B0B0F] text-slate-200 antialiased">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-white/5 px-8 py-3 bg-[#0B0B0F]/80 backdrop-blur-md z-30 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="text-[#7c5cff] size-8">
-            <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-              <path d="M4 42.4379C4 42.4379 14.0962 36.0744 24 41.1692C35.0664 46.8624 44 42.2078 44 42.2078L44 7.01134C44 7.01134 35.068 11.6577 24.0031 5.96913C14.0971 0.876274 4 7.27094 4 7.27094L4 42.4379Z" fill="currentColor" />
-            </svg>
-          </div>
-          <h2 className="text-white text-lg font-bold tracking-tight">PitchPilot <span className="text-[#7c5cff]">AI</span></h2>
-        </div>
-        <nav className="hidden md:flex items-center gap-8">
-          <button onClick={onNavInstructions} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Instructions</button>
-          <button onClick={onNavResources} className="text-slate-400 text-sm font-medium hover:text-white transition-colors">Resources</button>
-          <span className="text-white text-sm font-semibold border-b-2 border-[#7c5cff] py-4 -mb-4">Reporting</span>
-          <button onClick={onNewSession} className="bg-[#7C5CFF] text-white text-sm font-bold px-5 py-2.5 rounded-md hover:bg-[#7C5CFF]/90 transition-all">New Session</button>
-        </nav>
-      </header>
+      <Header
+        activePage="reporting"
+        onNavInstructions={onNavInstructions}
+        onNavResources={onNavResources}
+        onNavReporting={onNavReporting}
+        onStartSession={onNewSession}
+        ctaLabel={t.newSession}
+      />
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
@@ -90,14 +159,14 @@ export default function FeedbackReport({
           {/* Title Section */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/5">
             <div>
-              <h1 className="text-3xl font-black text-white tracking-tight mb-1">Pitch Performance Report</h1>
+              <h1 className="text-3xl font-black text-white tracking-tight mb-1">{t.title}</h1>
               <div className="flex items-center gap-2">
                 <span className="size-2 rounded-full bg-[#7c5cff] animate-pulse"></span>
-                <p className="text-slate-400 font-medium">AI-generated analysis of your session</p>
+                <p className="text-slate-400 font-medium">{t.subtitle}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Session: {sessionId}</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{t.session}: {sessionId}</span>
             </div>
           </div>
 
@@ -116,9 +185,9 @@ export default function FeedbackReport({
             <div className="flex-1 text-center md:text-left">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20 mb-4" style={{ boxShadow: '0 0 25px -5px rgba(16, 185, 129, 0.2)' }}>
                 <span className="material-symbols-outlined text-sm">verified</span>
-                <span className="text-xs font-bold uppercase tracking-wider">Level: {level}</span>
+                <span className="text-xs font-bold uppercase tracking-wider">{t.level}: {level}</span>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Your pitch analysis is ready</h2>
+              <h2 className="text-2xl font-bold text-white mb-2">{t.scoreReady}</h2>
               <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">{summary}</p>
             </div>
             <div className="flex flex-col gap-3 shrink-0">
@@ -127,7 +196,7 @@ export default function FeedbackReport({
                 className="flex items-center justify-center gap-2 h-11 px-6 bg-[#7c5cff] text-white text-sm font-bold rounded-xl hover:bg-[#7c5cff]/90 transition-all shadow-lg shadow-[#7c5cff]/20"
               >
                 <span className="material-symbols-outlined text-sm">download</span>
-                Export Report
+                {t.exportReport}
               </button>
               <button
                 onClick={() => {
@@ -140,14 +209,12 @@ export default function FeedbackReport({
                 className="flex items-center justify-center gap-2 h-11 px-6 bg-white/5 text-white text-sm font-bold rounded-xl hover:bg-white/10 transition-all border border-white/5"
               >
                 <span className="material-symbols-outlined text-sm">share</span>
-                Share Report
+                {t.shareReport}
               </button>
               {sessionData?.questionsAnswered != null && (
                 <div className="flex items-center justify-center gap-2 h-11 px-6 bg-white/5 border border-white/5 rounded-xl">
                   <span className="material-symbols-outlined text-sm text-[#7c5cff]">quiz</span>
-                  <span className="text-xs text-slate-400">
-                    {sessionData.questionsAnswered} question{sessionData.questionsAnswered !== 1 ? 's' : ''} answered
-                  </span>
+                  <span className="text-xs text-slate-400">{t.questionsAnswered(sessionData.questionsAnswered)}</span>
                 </div>
               )}
             </div>
@@ -162,7 +229,7 @@ export default function FeedbackReport({
               {whatWentWell?.length > 0 && (
                 <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl overflow-hidden">
                   <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                    <h3 className="font-bold text-lg text-white">What You Did Well</h3>
+                    <h3 className="font-bold text-lg text-white">{t.whatWentWell}</h3>
                     <span className="material-symbols-outlined text-[#10b981]">task_alt</span>
                   </div>
                   <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -181,7 +248,7 @@ export default function FeedbackReport({
                 <div className="space-y-6">
                   <div className="flex items-center gap-3">
                     <div className="h-px flex-1 bg-white/5"></div>
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">Strategic Advisor: Business Recommendations</h3>
+                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.businessRecs}</h3>
                     <div className="h-px flex-1 bg-white/5"></div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -195,7 +262,7 @@ export default function FeedbackReport({
                             <h4 className="font-bold text-white">{rec.title}</h4>
                             <p className="text-sm text-slate-400 leading-relaxed">{rec.description}</p>
                             <div className="pt-2">
-                              <span className="text-[10px] font-bold text-[#7c5cff] uppercase tracking-wider block mb-1">Actionable Suggestion</span>
+                              <span className="text-[10px] font-bold text-[#7c5cff] uppercase tracking-wider block mb-1">{t.actionable}</span>
                               <p className="text-xs text-slate-300 bg-white/5 rounded-lg p-3">{rec.suggestion}</p>
                             </div>
                           </div>
@@ -211,7 +278,7 @@ export default function FeedbackReport({
                 <div className="space-y-6">
                   <div className="flex items-center gap-3">
                     <div className="h-px flex-1 bg-white/5"></div>
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">Strategic Advisor: What Was Confusing</h3>
+                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.confusingMoments}</h3>
                     <div className="h-px flex-1 bg-white/5"></div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -224,7 +291,7 @@ export default function FeedbackReport({
                         <h4 className="font-bold text-slate-200 mb-2">{moment.title}</h4>
                         <p className="text-xs text-slate-400 leading-relaxed mb-4">{moment.description}</p>
                         <div className="bg-white/5 border border-white/5 rounded-xl p-3">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Simplification</span>
+                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.simplification}</span>
                           <p className="text-[11px] text-slate-300">{moment.simplification}</p>
                         </div>
                       </div>
@@ -240,7 +307,7 @@ export default function FeedbackReport({
               {/* Top Improvements */}
               {topImprovements?.length > 0 && (
                 <div className="space-y-4">
-                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2">Top Improvements</h3>
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2">{t.topImprovements}</h3>
                   {topImprovements.map((imp, idx) => {
                     const colors = colorMap[imp.color] || colorMap.primary;
                     return (
@@ -252,7 +319,7 @@ export default function FeedbackReport({
                           <h4 className="font-bold text-white">{imp.title}</h4>
                         </div>
                         <p className="text-xs text-slate-400 leading-relaxed mb-3">{imp.description}</p>
-                        <div className={`text-[10px] font-bold ${colors.text} uppercase tracking-wider`}>Actionable: {imp.actionable}</div>
+                        <div className={`text-[10px] font-bold ${colors.text} uppercase tracking-wider`}>{t.actionable}: {imp.actionable}</div>
                       </div>
                     );
                   })}
@@ -264,7 +331,7 @@ export default function FeedbackReport({
                 <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6">
                   <h3 className="font-bold text-sm mb-6 flex items-center gap-2 text-white">
                     <span className="material-symbols-outlined text-[#7c5cff] text-lg">mic_external_on</span>
-                    Delivery Metrics
+                    {t.deliveryMetrics}
                   </h3>
                   <div className="space-y-5">
                     {Object.entries(deliveryMetrics).map(([key, value]) => (
@@ -287,20 +354,20 @@ export default function FeedbackReport({
                 <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6">
                   <h3 className="font-bold text-sm mb-4 flex items-center gap-2 text-white">
                     <span className="material-symbols-outlined text-[#7c5cff] text-lg">videocam</span>
-                    Video Presence
+                    {t.videoPresence}
                   </h3>
                   <div className="flex justify-between gap-4">
                     <div className="flex flex-col items-center gap-2">
                       <div className="size-14 rounded-full border-2 border-[#7c5cff] border-t-white/10 flex items-center justify-center">
                         <span className="text-xs font-bold text-white">{videoPresence.eyeContact}%</span>
                       </div>
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Eye Contact</span>
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t.eyeContact}</span>
                     </div>
                     <div className="flex flex-col items-center gap-2">
                       <div className="size-14 rounded-full border-2 border-[#a78bfa] border-t-white/10 flex items-center justify-center">
                         <span className="text-xs font-bold text-white">{videoPresence.posture}%</span>
                       </div>
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Posture</span>
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t.posture}</span>
                     </div>
                     <div className="flex-1">
                       <p className="text-[10px] text-slate-400 italic leading-tight">{videoPresence.quote}</p>
@@ -316,19 +383,19 @@ export default function FeedbackReport({
             <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-8">
               <h3 className="font-bold text-lg mb-8 flex items-center gap-2 text-white">
                 <span className="material-symbols-outlined text-[#7c5cff]">analytics</span>
-                Voice Analysis
+                {t.voiceAnalysis}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Average Pitch</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.avgPitch}</span>
                   <div className="text-xl font-bold text-white">{voiceAnalysis.avgPitch}</div>
                 </div>
                 <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Words Per Minute</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.wpm}</span>
                   <div className="text-xl font-bold text-white">{voiceAnalysis.wpm}</div>
                 </div>
                 <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Sentiment Balance</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.sentimentBalance}</span>
                   <div className="text-xl font-bold text-white">{voiceAnalysis.sentiment}</div>
                 </div>
               </div>
@@ -340,7 +407,7 @@ export default function FeedbackReport({
             <div className="space-y-6">
               <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#7c5cff] text-lg">psychology</span>
-                Recommended Practice Prompts
+                {t.practicePrompts}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {practicePrompts.map((prompt, idx) => (
@@ -365,8 +432,8 @@ export default function FeedbackReport({
                 </div>
                 <div className="relative flex justify-center">
                   <div className="bg-[#0B0B0F] px-6 flex flex-col items-center gap-1">
-                    <h2 className="text-2xl font-black text-white tracking-tight">Action Items</h2>
-                    <p className="text-slate-400 text-xs font-medium uppercase tracking-widest">Your next steps to improve this pitch</p>
+                    <h2 className="text-2xl font-black text-white tracking-tight">{t.actionItems}</h2>
+                    <p className="text-slate-400 text-xs font-medium uppercase tracking-widest">{t.actionItemsSub}</p>
                   </div>
                 </div>
               </div>
@@ -378,7 +445,7 @@ export default function FeedbackReport({
                       <div className="size-12 rounded-xl bg-[#7c5cff]/10 flex items-center justify-center text-[#7c5cff]">
                         <span className="material-symbols-outlined text-2xl">chat_bubble</span>
                       </div>
-                      <h4 className="font-bold text-white text-lg">Communication Focus</h4>
+                      <h4 className="font-bold text-white text-lg">{t.communicationFocus}</h4>
                     </div>
                     <ul className="space-y-4">
                       {actionItems.communication.map((item, idx) => (
@@ -397,7 +464,7 @@ export default function FeedbackReport({
                       <div className="size-12 rounded-xl bg-[#10b981]/10 flex items-center justify-center text-[#10b981]">
                         <span className="material-symbols-outlined text-2xl">show_chart</span>
                       </div>
-                      <h4 className="font-bold text-white text-lg">Business Focus</h4>
+                      <h4 className="font-bold text-white text-lg">{t.businessFocus}</h4>
                     </div>
                     <ul className="space-y-4">
                       {actionItems.business.map((item, idx) => (
@@ -416,7 +483,7 @@ export default function FeedbackReport({
                       <div className="size-12 rounded-xl bg-[#a78bfa]/10 flex items-center justify-center text-[#a78bfa]">
                         <span className="material-symbols-outlined text-2xl">highlight</span>
                       </div>
-                      <h4 className="font-bold text-white text-lg">Audience Impact</h4>
+                      <h4 className="font-bold text-white text-lg">{t.audienceImpact}</h4>
                     </div>
                     <ul className="space-y-4">
                       {actionItems.audience.map((item, idx) => (
@@ -441,8 +508,8 @@ export default function FeedbackReport({
                     <span className="material-symbols-outlined">subject</span>
                   </div>
                   <div>
-                    <h4 className="font-bold text-white text-lg">View Session Transcript</h4>
-                    <p className="text-xs text-slate-500">Open full transcript and detailed analysis</p>
+                    <h4 className="font-bold text-white text-lg">{t.viewTranscript}</h4>
+                    <p className="text-xs text-slate-500">{t.viewTranscriptSub}</p>
                   </div>
                 </div>
                 <span className="material-symbols-outlined text-slate-500 group-hover:text-[#7c5cff] group-hover:translate-x-1 transition-all">chevron_right</span>
@@ -454,7 +521,7 @@ export default function FeedbackReport({
           <div className="flex justify-center pt-8 pb-12">
             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">auto_awesome</span>
-              AI Analysis Engine • Session ID: {sessionId}
+              {t.aiEngine} • {t.session} ID: {sessionId}
             </p>
           </div>
         </div>

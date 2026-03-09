@@ -64,6 +64,7 @@ function App() {
   if (screen === 'instructions') {
     return (
       <Instructions
+        language={language ?? 'en'}
         onStartSession={handleStartSession}
         onNavResources={navResources}
         onNavReporting={navReporting}
@@ -75,6 +76,7 @@ function App() {
     return (
       <ResourceDetail
         resource={selectedResource}
+        language={language ?? 'en'}
         onBack={handleBackFromResourceDetail}
         onStartSession={handleStartSession}
         onNavInstructions={navInstructions}
@@ -86,6 +88,8 @@ function App() {
   if (screen === 'resources') {
     return (
       <BuilderResources
+        language={language ?? 'en'}
+        onBack={navInstructions}
         onStartSession={handleStartSession}
         onSelectResource={handleSelectResource}
         onNavInstructions={navInstructions}
@@ -100,7 +104,12 @@ function App() {
         sessionId={sessionId}
         date={new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         transcript={sessionData?.transcript ?? []}
+        language={language ?? 'en'}
         onBack={handleBackFromTranscript}
+        onNavInstructions={navInstructions}
+        onNavResources={navResources}
+        onNavReporting={navReporting}
+        onStartSession={handleStartSession}
       />
     );
   }
@@ -110,13 +119,14 @@ function App() {
       return (
         <FeedbackReport
           sessionId={sessionId}
-          language={language}
+          language={language ?? 'en'}
           feedbackData={sessionData?.report ?? null}
           sessionData={sessionData}
           onViewTranscript={handleViewTranscript}
           onNewSession={handleNewSession}
           onNavInstructions={navInstructions}
           onNavResources={navResources}
+          onNavReporting={navReporting}
         />
       );
     }
@@ -125,6 +135,7 @@ function App() {
         onStartSession={handleStartSession}
         onNavInstructions={navInstructions}
         onNavResources={navResources}
+        onNavReporting={navReporting}
       />
     );
   }
