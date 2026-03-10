@@ -5,28 +5,18 @@ const WS_URL =
     ? `wss://${window.location.host}/ws/voice`
     : 'ws://localhost:3001/ws/voice';
 
-// Filter out system events and noise from the visible transcript
-const isSystemMessage = (text) => {
+// Unified filter: returns true if text should NOT appear in the visible transcript
+const shouldFilter = (text) => {
+  if (!text || text.trim().length < 4) return true;
   const t = text.trim();
-  return (
-    t.includes('<<SYSTEM_EVENT>>') ||
-    t.includes('pitch_timer_ended') ||
-    t.includes('qa_timer_ended') ||
-    /^\d[\d\s]*$/.test(t) ||
-    t.length < 4
-  );
-};
-
-// Filter out Gemini internal reasoning that leaks into the transcript
-const isInternalThought = (text) => {
-  const t = text.trim();
-  const patterns = [
-    /\*\*.*\*\*/,                                                          // **Bold headers**
-    /^(I've|I have|I'm now|I will|I've crafted|I've formulated|I've got)/i,
-    /^(Initiating|Formulating|Defining|Confirming|Transitioning|Building)/i,
-    /^(Now I|Now,? I'm|My goal|My next step|With that)/i,
-  ];
-  return patterns.some((p) => p.test(t));
+  if (t.includes('<<SYSTEM_EVENT>>')) return true;
+  if (/^\d[\d\s]*$/.test(t)) return true;
+  if (/\*\*.*\*\*/.test(t)) return true;
+  if (/^(I've|I have|I'm now|I will|I've crafted|I've formulated)/i.test(t)) return true;
+  if (/^(Initiating|Formulating|Defining|Confirming|Transitioning|Building|Crafting)/i.test(t)) return true;
+  if (/^(Now I|Now,? I'm|My goal|My next step|With that|I've got)/i.test(t)) return true;
+  if (t.includes('pitch_timer_ended') || t.includes('qa_timer_ended')) return true;
+  return false;
 };
 
 /**
@@ -171,7 +161,7 @@ export function useVoiceSession({ onEvent } = {}) {
       userSpeechTimeoutRef.current = null;
     }
     const text = userBufferRef.current.trim();
-    if (text && !isSystemMessage(text)) {
+    if (!shouldFilter(text)) {
       setTranscript((prev) => [
         ...prev,
         { role: 'user', text, timestamp: userTurnStartRef.current, isFinal: true },
@@ -211,11 +201,10 @@ export function useVoiceSession({ onEvent } = {}) {
             scheduleAudioChunk(msg.data);
           } else if (msg.type === 'transcript') {
             const text = msg.text ?? '';
-            if (isSystemMessage(text)) return;
+            // Per-chunk filter: drop obvious noise immediately
+            if (shouldFilter(text)) return;
 
             if (msg.role === 'model') {
-              // Drop Gemini internal reasoning that leaks into output transcription
-              if (isInternalThought(text)) return;
               // Accumulate AI chunk — committed to transcript on turn_complete
               aiBufferRef.current += text;
             } else {
@@ -229,7 +218,7 @@ export function useVoiceSession({ onEvent } = {}) {
               userSpeechTimeoutRef.current = setTimeout(() => {
                 userSpeechTimeoutRef.current = null;
                 const t = userBufferRef.current.trim();
-                if (t.length > 3 && !isSystemMessage(t)) {
+                if (!shouldFilter(t)) {
                   setTranscript((prev) => [
                     ...prev,
                     { role: 'user', text: t, timestamp: userTurnStartRef.current, isFinal: true },
@@ -250,7 +239,7 @@ export function useVoiceSession({ onEvent } = {}) {
 
             // Commit the accumulated AI buffer as one final paragraph entry
             const aiText = aiBufferRef.current.trim();
-            if (aiText && !isSystemMessage(aiText) && !isInternalThought(aiText)) {
+            if (!shouldFilter(aiText)) {
               const ts = Date.now() - sessionStartRef.current;
               setTranscript((prev) => [...prev, { role: 'ai', text: aiText, timestamp: ts, isFinal: true }]);
             }
@@ -312,6 +301,15 @@ export function useVoiceSession({ onEvent } = {}) {
   }, []);
 
   /**
+   * Send a video frame (base64 JPEG) to the backend for Gemini visual analysis.
+   */
+  const sendVideoFrame = useCallback((base64Data) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'video_frame', data: base64Data }));
+    }
+  }, []);
+
+  /**
    * Signal end of session to backend and stop mic/audio, but keep the WebSocket
    * open to receive the AI-generated feedback report.
    * Call disconnect() once the report arrives to finish cleanup.
@@ -351,6 +349,7 @@ export function useVoiceSession({ onEvent } = {}) {
     connect,
     disconnect,
     injectText,
+    sendVideoFrame,
     requestReport,
   };
 }

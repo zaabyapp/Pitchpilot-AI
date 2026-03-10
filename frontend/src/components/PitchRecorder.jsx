@@ -40,6 +40,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const qaTimerRef = useRef(null);
   const graceTimerRef = useRef(null);
   const coachRedirectRef = useRef(null);
+  const videoFrameIntervalRef = useRef(null);
   const simPhaseRef = useRef(simPhase);
   const questionsAnsweredRef = useRef(questionsAnswered);
   const injectTextRef = useRef(null);
@@ -73,7 +74,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     }
   }, [onSessionEnd, sessionId, language]);
 
-  const { status, isAISpeaking, micStream, transcript, connect, disconnect, injectText, requestReport } =
+  const { status, isAISpeaking, micStream, transcript, connect, disconnect, injectText, sendVideoFrame, requestReport } =
     useVoiceSession({ onEvent: handleEvent });
 
   // Keep disconnect + injectText in refs so handleEvent can call them without stale closure issues
@@ -167,6 +168,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     clearInterval(qaTimerRef.current);
     clearTimeout(graceTimerRef.current);
     clearTimeout(coachRedirectRef.current);
+    clearInterval(videoFrameIntervalRef.current);
   };
 
   // ---------------------------------------------------------------------------
@@ -198,6 +200,38 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
 
     return () => clearInterval(qaTimerRef.current);
   }, [simPhase, injectText]);
+
+  // ---------------------------------------------------------------------------
+  // Video frame capture — send to backend every 30s during Q&A for visual analysis
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (simPhase !== PHASE.QA_ACTIVE && simPhase !== PHASE.QA_WARNING) {
+      clearInterval(videoFrameIntervalRef.current);
+      return;
+    }
+
+    const captureFrame = () => {
+      const video = videoRef.current;
+      if (!video || video.videoWidth === 0 || isVideoOff) return;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, 640, 360);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        const base64 = dataUrl.split(',')[1];
+        if (base64) sendVideoFrame(base64);
+      } catch (_) { /* canvas capture may fail silently */ }
+    };
+
+    // Capture immediately, then every 30 seconds
+    captureFrame();
+    videoFrameIntervalRef.current = setInterval(captureFrame, 30000);
+
+    return () => clearInterval(videoFrameIntervalRef.current);
+  }, [simPhase, isVideoOff, sendVideoFrame]);
 
   // ---------------------------------------------------------------------------
   // Coaching phase → auto redirect
@@ -304,8 +338,12 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
           </div>
         </div>
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-black text-white">Generating your report…</h2>
-          <p className="text-slate-400 text-sm">Analyzing your pitch with AI. This takes a few seconds.</p>
+          <h2 className="text-2xl font-black text-white">
+            {language === 'es' ? 'Generando tu informe…' : 'Generating your report…'}
+          </h2>
+          <p className="text-slate-400 text-sm">
+            {language === 'es' ? 'Analizando tu presentación con IA. Esto toma unos segundos.' : 'Analyzing your pitch with AI. This takes a few seconds.'}
+          </p>
         </div>
         <div className="flex gap-1.5">
           {[0, 1, 2].map((i) => (
