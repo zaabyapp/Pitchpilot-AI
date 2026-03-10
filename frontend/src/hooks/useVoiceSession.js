@@ -12,9 +12,21 @@ const isSystemMessage = (text) => {
     t.includes('<<SYSTEM_EVENT>>') ||
     t.includes('pitch_timer_ended') ||
     t.includes('qa_timer_ended') ||
-    /^\d+(\s+\d+)*$/.test(t) ||
+    /^\d[\d\s]*$/.test(t) ||
     t.length < 4
   );
+};
+
+// Filter out Gemini internal reasoning that leaks into the transcript
+const isInternalThought = (text) => {
+  const t = text.trim();
+  const patterns = [
+    /\*\*.*\*\*/,                                                          // **Bold headers**
+    /^(I've|I have|I'm now|I will|I've crafted|I've formulated|I've got)/i,
+    /^(Initiating|Formulating|Defining|Confirming|Transitioning|Building)/i,
+    /^(Now I|Now,? I'm|My goal|My next step|With that)/i,
+  ];
+  return patterns.some((p) => p.test(t));
 };
 
 /**
@@ -48,6 +60,7 @@ export function useVoiceSession({ onEvent } = {}) {
   const sourceRef = useRef(null);
   const nextPlayTimeRef = useRef(0);
   const speakingTimerRef = useRef(null);
+  const userSpeechTimeoutRef = useRef(null);
   const sessionStartRef = useRef(Date.now());
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent; // keep ref current without adding to dep arrays
@@ -153,6 +166,10 @@ export function useVoiceSession({ onEvent } = {}) {
   // ---------------------------------------------------------------------------
 
   const flushUserBuffer = useCallback(() => {
+    if (userSpeechTimeoutRef.current) {
+      clearTimeout(userSpeechTimeoutRef.current);
+      userSpeechTimeoutRef.current = null;
+    }
     const text = userBufferRef.current.trim();
     if (text && !isSystemMessage(text)) {
       setTranscript((prev) => [
@@ -194,19 +211,32 @@ export function useVoiceSession({ onEvent } = {}) {
             scheduleAudioChunk(msg.data);
           } else if (msg.type === 'transcript') {
             const text = msg.text ?? '';
-            if (isSystemMessage(text)) return; // drop noise and system events
+            if (isSystemMessage(text)) return;
 
             if (msg.role === 'model') {
-              // When AI starts speaking, flush any pending user speech
-              if (userBufferRef.current.trim()) flushUserBuffer();
+              // Drop Gemini internal reasoning that leaks into output transcription
+              if (isInternalThought(text)) return;
               // Accumulate AI chunk — committed to transcript on turn_complete
               aiBufferRef.current += text;
             } else {
-              // Accumulate user speech — flushed when AI starts speaking
+              // Accumulate user speech — debounce flush 500ms after last chunk
               if (!userBufferRef.current) {
                 userTurnStartRef.current = Date.now() - sessionStartRef.current;
               }
               userBufferRef.current += text;
+              // Reset debounce: flush 500ms after user stops speaking
+              if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
+              userSpeechTimeoutRef.current = setTimeout(() => {
+                userSpeechTimeoutRef.current = null;
+                const t = userBufferRef.current.trim();
+                if (t.length > 3 && !isSystemMessage(t)) {
+                  setTranscript((prev) => [
+                    ...prev,
+                    { role: 'user', text: t, timestamp: userTurnStartRef.current, isFinal: true },
+                  ]);
+                }
+                userBufferRef.current = '';
+              }, 500);
             }
           } else if (msg.type === 'phase_event') {
             onEventRef.current?.({ type: 'phase_event', phase: msg.phase });
@@ -215,9 +245,12 @@ export function useVoiceSession({ onEvent } = {}) {
             setReportData({ data: msg.data, transcript: msg.transcript });
             onEventRef.current?.({ type: 'report', data: msg.data, transcript: msg.transcript });
           } else if (msg.type === 'turn_complete') {
+            // Flush any pending user speech (safety net — debounce may already have fired)
+            if (userBufferRef.current.trim()) flushUserBuffer();
+
             // Commit the accumulated AI buffer as one final paragraph entry
             const aiText = aiBufferRef.current.trim();
-            if (aiText && !isSystemMessage(aiText)) {
+            if (aiText && !isSystemMessage(aiText) && !isInternalThought(aiText)) {
               const ts = Date.now() - sessionStartRef.current;
               setTranscript((prev) => [...prev, { role: 'ai', text: aiText, timestamp: ts, isFinal: true }]);
             }
@@ -245,6 +278,7 @@ export function useVoiceSession({ onEvent } = {}) {
 
   const disconnect = useCallback(() => {
     if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
+    if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
 
     try { wsRef.current?.send(JSON.stringify({ type: 'end_session' })); } catch (_) {}
     wsRef.current?.close();
@@ -284,6 +318,7 @@ export function useVoiceSession({ onEvent } = {}) {
    */
   const requestReport = useCallback(() => {
     if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
+    if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
     // Tell backend to close Gemini and generate the report
     try { wsRef.current?.send(JSON.stringify({ type: 'end_session' })); } catch (_) {}
     // Stop mic and audio processing — no more audio needed

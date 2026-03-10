@@ -8,11 +8,12 @@ const GRACE_PERIOD = 15;     // seconds after QA timer before hard inject
 const COACH_REDIRECT_DELAY = 45000; // ms to wait after coaching starts before redirect
 
 // Finite states for the simulation
-// onboarding → pitch_intro → pitch_active → qa_active → qa_warning → coaching → done
+// onboarding → pitch_intro → pitch_active → qa_waiting → qa_active → qa_warning → coaching → done
 const PHASE = {
   ONBOARDING: 'onboarding',
   PITCH_INTRO: 'pitch_intro',   // AI finished onboarding, timer frozen — waiting to start
   PITCH_ACTIVE: 'pitch_active',
+  QA_WAITING: 'qa_waiting',     // pitch ended, injected — waiting for AI first Q&A turn (qa_start)
   QA_ACTIVE: 'qa_active',
   QA_WARNING: 'qa_warning',
   COACHING: 'coaching',
@@ -55,6 +56,9 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const handleEvent = useCallback((event) => {
     if (event.type === 'phase_event' && event.phase === 'pitch_start') {
       startPitchCountdownRef.current?.();
+    } else if (event.type === 'phase_event' && event.phase === 'qa_start') {
+      // Backend confirmed AI asked first Q&A question — now start the 5-min timer
+      setSimPhase(PHASE.QA_ACTIVE);
     } else if (event.type === 'report') {
       // Report received — do full WS cleanup then navigate
       disconnectRef.current?.();
@@ -79,7 +83,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
 
   // Track user responses during Q&A to count questions answered
   useEffect(() => {
-    if (simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING) {
+    if (simPhase === PHASE.QA_WAITING || simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING) {
       const userEntries = transcript.filter((e) => e.role === 'user' && e.isFinal);
       setQuestionsAnswered(userEntries.length);
     }
@@ -92,8 +96,9 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const startPitchCountdown = useCallback(() => {
     // Guard: only start if we haven't passed the pitch phase yet
     const phase = simPhaseRef.current;
-    if (phase === PHASE.PITCH_ACTIVE || phase === PHASE.QA_ACTIVE ||
-        phase === PHASE.QA_WARNING || phase === PHASE.COACHING || phase === PHASE.DONE) return;
+    if (phase === PHASE.PITCH_ACTIVE || phase === PHASE.QA_WAITING ||
+        phase === PHASE.QA_ACTIVE || phase === PHASE.QA_WARNING ||
+        phase === PHASE.COACHING || phase === PHASE.DONE) return;
 
     clearInterval(pitchTimerRef.current);
     setSimPhase(PHASE.PITCH_ACTIVE);
@@ -106,7 +111,8 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
       if (timeLeft <= 0) {
         clearInterval(pitchTimerRef.current);
         injectTextRef.current?.('<<SYSTEM_EVENT>> pitch_timer_ended');
-        setSimPhase(PHASE.QA_ACTIVE);
+        // Wait for qa_start event from backend (fires after AI's first Q&A turn)
+        setSimPhase(PHASE.QA_WAITING);
       }
     }, 1000);
   }, []);
@@ -252,6 +258,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     [PHASE.ONBOARDING]: language === 'es' ? 'Preparación' : 'Onboarding',
     [PHASE.PITCH_INTRO]: language === 'es' ? 'Listo para pitchear' : 'Ready to Pitch',
     [PHASE.PITCH_ACTIVE]: language === 'es' ? 'Tu Pitch — 45s' : 'Your Pitch — 45s',
+    [PHASE.QA_WAITING]: language === 'es' ? 'Sesión de Preguntas' : 'Q&A Session',
     [PHASE.QA_ACTIVE]: language === 'es' ? 'Sesión de Preguntas' : 'Q&A Session',
     [PHASE.QA_WARNING]: language === 'es' ? '¡Tiempo casi agotado!' : 'Time almost up!',
     [PHASE.COACHING]: language === 'es' ? 'Feedback del Coach' : 'Coach Feedback',
@@ -261,6 +268,8 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   // Timer display config
   const showPitchTimerFrozen = simPhase === PHASE.PITCH_INTRO;
   const showPitchTimer = simPhase === PHASE.PITCH_ACTIVE;
+  // QA_WAITING shows frozen 5:00; QA_ACTIVE/WARNING show live countdown
+  const showQaTimerFrozen = simPhase === PHASE.QA_WAITING;
   const showQaTimer = simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING;
   const isWarning = simPhase === PHASE.QA_WARNING || (showPitchTimer && pitchTimeLeft <= 10);
 
@@ -274,6 +283,8 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     ? formatTime(PITCH_DURATION)
     : showPitchTimer
     ? formatTime(pitchTimeLeft)
+    : showQaTimerFrozen
+    ? formatTime(QA_DURATION)
     : showQaTimer
     ? formatTime(qaTimeLeft)
     : null;
@@ -332,9 +343,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
             <span className="material-symbols-outlined text-base">timer</span>
             <span className="text-2xl font-black tabular-nums tracking-tight">{timerValue}</span>
             <span className="text-[10px] font-bold uppercase opacity-70">
-              {showPitchTimer || showPitchTimerFrozen
-                ? 'Pitch'
-                : (language === 'es' ? 'Q&A' : 'Q&A')}
+              {showPitchTimer || showPitchTimerFrozen ? 'Pitch' : 'Q&A'}
             </span>
           </div>
         )}
@@ -460,7 +469,10 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                     ? (language === 'es' ? 'El AI está hablando…' : 'AI is speaking…')
                     : (language === 'es' ? 'Da tu pitch ahora — el temporizador corre' : 'Give your pitch now — timer is running')
                 )}
-                {(simPhase === PHASE.QA_ACTIVE) && (
+                {simPhase === PHASE.QA_WAITING && (
+                  language === 'es' ? 'Esperando primera pregunta…' : 'Waiting for first question…'
+                )}
+                {simPhase === PHASE.QA_ACTIVE && (
                   isAISpeaking
                     ? (language === 'es' ? 'El AI está preguntando…' : 'AI is asking…')
                     : (language === 'es' ? 'Responde la pregunta' : 'Answer the question')
@@ -476,7 +488,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
               </p>
 
               {/* Q&A question counter */}
-              {(simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING) && questionsAnswered > 0 && (
+              {(simPhase === PHASE.QA_WAITING || simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING) && questionsAnswered > 0 && (
                 <p className="text-slate-500 text-xs">
                   {language === 'es'
                     ? `${questionsAnswered} respuesta${questionsAnswered > 1 ? 's' : ''} dada${questionsAnswered > 1 ? 's' : ''}`
