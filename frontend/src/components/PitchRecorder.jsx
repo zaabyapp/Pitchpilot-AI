@@ -37,6 +37,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const questionsAnsweredRef = useRef(questionsAnswered);
   const injectTextRef = useRef(null);
   const startPitchCountdownRef = useRef(null);
+  const coachingStartIndexRef = useRef(-1);
 
   simPhaseRef.current = simPhase;
   questionsAnsweredRef.current = questionsAnswered;
@@ -152,8 +153,16 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
 
   useEffect(() => {
     if (simPhase !== PHASE.COACHING || simulationClosingDone) return;
-    // After the first AI turn in coaching phase, transition to POST_SIM
-    const coachingAiTurns = transcript.filter((e) => e.role === 'ai' && e.isFinal);
+
+    // On first run in COACHING, record transcript baseline and wait
+    if (coachingStartIndexRef.current === -1) {
+      coachingStartIndexRef.current = transcript.length;
+      return;
+    }
+
+    // Only count AI turns that arrived AFTER entering coaching phase
+    const newEntries = transcript.slice(coachingStartIndexRef.current);
+    const coachingAiTurns = newEntries.filter((e) => e.role === 'ai' && e.isFinal);
     if (coachingAiTurns.length > 0 && !isAISpeaking) {
       setSimulationClosingDone(true);
       setSimPhase(PHASE.POST_SIM);

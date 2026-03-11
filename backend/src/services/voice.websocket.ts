@@ -313,6 +313,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
     let qaStartEmitted = false;
     let qaComplete = false;
     let reportSent = false;
+    let sessionEndRequested = false;
 
     // Pitch timing
     let pitchStartTimestamp = 0;
@@ -394,6 +395,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
       geminiWs = new WebSocket(`${GEMINI_LIVE_URL}?key=${apiKey}`);
 
       geminiWs.on('open', () => {
+        console.log('[VoiceWS] Gemini WebSocket connected, sending setup...');
         const setupMsg = {
           setup: {
             model: 'models/gemini-2.0-flash-live-001',
@@ -430,6 +432,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
 
           if (msg.setupComplete !== undefined) {
             isInitialized = true;
+            console.log('[VoiceWS] Gemini setup complete, sending session_started trigger');
             sendToClient({ type: 'ready' });
             geminiWs!.send(JSON.stringify({
               clientContent: {
@@ -437,6 +440,13 @@ export function setupVoiceWebSocket(server: http.Server): void {
                 turnComplete: true,
               },
             }));
+            return;
+          }
+
+          // Handle Gemini API error responses (e.g. bad model name, quota exceeded)
+          if (msg.error) {
+            console.error('[VoiceWS] Gemini API error:', JSON.stringify(msg.error));
+            sendToClient({ type: 'error', message: `Gemini API error: ${msg.error.message ?? msg.error.status ?? 'unknown'}` });
             return;
           }
 
@@ -558,13 +568,22 @@ export function setupVoiceWebSocket(server: http.Server): void {
       });
 
       geminiWs.on('error', (err) => {
-        console.error('[VoiceWS] Gemini error:', err.message);
+        console.error('[VoiceWS] Gemini WebSocket error:', err.message);
         sendToClient({ type: 'error', message: 'AI connection error' });
       });
 
-      geminiWs.on('close', () => {
-        // Generate and send feedback report, then close client connection
-        sendReport();
+      geminiWs.on('close', (code, reason) => {
+        const reasonStr = reason?.toString() || 'unknown';
+        console.log(`[VoiceWS] Gemini WebSocket closed — code=${code}, reason=${reasonStr}, sessionEndRequested=${sessionEndRequested}`);
+
+        if (sessionEndRequested) {
+          // Normal flow: user ended session, generate report
+          sendReport();
+        } else {
+          // Unexpected close (connection failure, bad model, API error)
+          console.error('[VoiceWS] Gemini closed unexpectedly — NOT generating report');
+          sendToClient({ type: 'error', message: 'AI connection closed unexpectedly' });
+        }
       });
     };
 
@@ -615,6 +634,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
             })
           );
         } else if (msg.type === 'end_session') {
+          sessionEndRequested = true;
           // If snapshot not yet frozen (e.g. user ends early), freeze now
           if (!simulationSnapshot) {
             freezeSnapshot();
