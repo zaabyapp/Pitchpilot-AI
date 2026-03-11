@@ -398,7 +398,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
         console.log('[VoiceWS] Gemini WebSocket connected, sending setup...');
         const setupMsg = {
           setup: {
-            model: 'models/gemini-2.0-flash-live-001',
+            model: 'models/gemini-2.5-flash-native-audio-preview-12-2025',
             generationConfig: {
               responseModalities: ['AUDIO'],
               speechConfig: {
