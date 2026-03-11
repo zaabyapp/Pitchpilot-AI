@@ -15,9 +15,11 @@ const shouldFilter = (text) => {
   if (/^(I've|I have|I'm now|I will|I've crafted|I've formulated)/i.test(t)) return true;
   if (/^(Initiating|Formulating|Defining|Confirming|Transitioning|Building|Crafting)/i.test(t)) return true;
   if (/^(Now I|Now,? I'm|My goal|My next step|With that|I've got)/i.test(t)) return true;
-  if (t.includes('pitch_timer_ended') || t.includes('qa_timer_ended')) return true;
+  if (t.includes('pitch_timer_ended') || t.includes('qa_timer_ended') || t.includes('qa_complete')) return true;
   return false;
 };
+
+const STALL_TIMEOUT_MS = 9000;
 
 /**
  * Manages a real-time voice session with the PitchPilot backend.
@@ -28,13 +30,11 @@ const shouldFilter = (text) => {
  *
  *   Gemini audio → backend → WebSocket → base64 PCM Int16 @24kHz
  *   → AudioContext @24kHz → scheduled playback
- *
- * @param {object} opts
- * @param {function} opts.onEvent - called with phase_event, session_data, etc.
  */
 export function useVoiceSession({ onEvent } = {}) {
   const [status, setStatus] = useState('idle'); // idle | connecting | active | error
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [isStalled, setIsStalled] = useState(false);
   const [transcript, setTranscript] = useState([]); // { role, text, timestamp }[]
   const [reportData, setReportData] = useState(null); // { data, transcript } from backend
 
@@ -42,7 +42,6 @@ export function useVoiceSession({ onEvent } = {}) {
   const micStreamRef = useRef(null);
   const inputCtxRef = useRef(null);
   const outputCtxRef = useRef(null);
-  // Transcript accumulation buffers — one entry per complete turn, not per chunk
   const aiBufferRef = useRef('');
   const userBufferRef = useRef('');
   const userTurnStartRef = useRef(0);
@@ -51,9 +50,10 @@ export function useVoiceSession({ onEvent } = {}) {
   const nextPlayTimeRef = useRef(0);
   const speakingTimerRef = useRef(null);
   const userSpeechTimeoutRef = useRef(null);
+  const stallTimerRef = useRef(null);
   const sessionStartRef = useRef(Date.now());
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent; // keep ref current without adding to dep arrays
+  onEventRef.current = onEvent;
 
   // ---------------------------------------------------------------------------
   // Audio playback
@@ -73,6 +73,14 @@ export function useVoiceSession({ onEvent } = {}) {
   const scheduleAudioChunk = useCallback(
     (base64Data) => {
       const ctx = getOutputCtx();
+
+      // Clear stall state on first AI audio chunk
+      if (stallTimerRef.current) {
+        clearTimeout(stallTimerRef.current);
+        stallTimerRef.current = null;
+      }
+      if (isStalled) setIsStalled(false);
+      console.log('[timing] first_ai_audio_started', Date.now());
 
       const binary = atob(base64Data);
       const bytes = new Uint8Array(binary.length);
@@ -99,8 +107,20 @@ export function useVoiceSession({ onEvent } = {}) {
       const msUntilDone = (nextPlayTimeRef.current - ctx.currentTime + 0.3) * 1000;
       speakingTimerRef.current = setTimeout(() => setIsAISpeaking(false), msUntilDone);
     },
-    [getOutputCtx]
+    [getOutputCtx, isStalled]
   );
+
+  // ---------------------------------------------------------------------------
+  // Stall detection
+  // ---------------------------------------------------------------------------
+
+  const startStallTimer = useCallback(() => {
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    stallTimerRef.current = setTimeout(() => {
+      setIsStalled(true);
+      console.log('[timing] stall_detected', Date.now());
+    }, STALL_TIMEOUT_MS);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Microphone capture
@@ -168,7 +188,10 @@ export function useVoiceSession({ onEvent } = {}) {
       ]);
     }
     userBufferRef.current = '';
-  }, []);
+
+    // Start stall timer — we expect AI to respond soon
+    startStallTimer();
+  }, [startStallTimer]);
 
   // ---------------------------------------------------------------------------
   // Session control
@@ -178,6 +201,7 @@ export function useVoiceSession({ onEvent } = {}) {
     async ({ language = 'en' } = {}) => {
       setStatus('connecting');
       setTranscript([]);
+      setIsStalled(false);
       sessionStartRef.current = Date.now();
       aiBufferRef.current = '';
       userBufferRef.current = '';
@@ -201,22 +225,27 @@ export function useVoiceSession({ onEvent } = {}) {
             scheduleAudioChunk(msg.data);
           } else if (msg.type === 'transcript') {
             const text = msg.text ?? '';
-            // Per-chunk filter: drop obvious noise immediately
             if (shouldFilter(text)) return;
 
             if (msg.role === 'model') {
-              // Accumulate AI chunk — committed to transcript on turn_complete
               aiBufferRef.current += text;
+              // Clear stall on first AI text
+              if (stallTimerRef.current) {
+                clearTimeout(stallTimerRef.current);
+                stallTimerRef.current = null;
+              }
+              setIsStalled(false);
+              console.log('[timing] first_ai_chunk_received', Date.now());
             } else {
-              // Accumulate user speech — debounce flush 500ms after last chunk
               if (!userBufferRef.current) {
                 userTurnStartRef.current = Date.now() - sessionStartRef.current;
+                console.log('[timing] user_turn_start', Date.now());
               }
               userBufferRef.current += text;
-              // Reset debounce: flush 500ms after user stops speaking
               if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
               userSpeechTimeoutRef.current = setTimeout(() => {
                 userSpeechTimeoutRef.current = null;
+                console.log('[timing] user_turn_end', Date.now());
                 const t = userBufferRef.current.trim();
                 if (!shouldFilter(t)) {
                   setTranscript((prev) => [
@@ -225,19 +254,18 @@ export function useVoiceSession({ onEvent } = {}) {
                   ]);
                 }
                 userBufferRef.current = '';
+                // Start stall timer after user finishes
+                startStallTimer();
               }, 500);
             }
           } else if (msg.type === 'phase_event') {
-            onEventRef.current?.({ type: 'phase_event', phase: msg.phase });
+            onEventRef.current?.({ type: 'phase_event', phase: msg.phase, count: msg.count });
           } else if (msg.type === 'report') {
-            // AI-generated feedback report + final transcript from backend
             setReportData({ data: msg.data, transcript: msg.transcript });
             onEventRef.current?.({ type: 'report', data: msg.data, transcript: msg.transcript });
           } else if (msg.type === 'turn_complete') {
-            // Flush any pending user speech (safety net — debounce may already have fired)
             if (userBufferRef.current.trim()) flushUserBuffer();
 
-            // Commit the accumulated AI buffer as one final paragraph entry
             const aiText = aiBufferRef.current.trim();
             if (!shouldFilter(aiText)) {
               const ts = Date.now() - sessionStartRef.current;
@@ -256,18 +284,21 @@ export function useVoiceSession({ onEvent } = {}) {
       ws.onclose = () => {
         setStatus('idle');
         setIsAISpeaking(false);
+        setIsStalled(false);
+        if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
       };
 
       ws.onerror = () => {
         setStatus('error');
       };
     },
-    [setupMicrophone, scheduleAudioChunk, flushUserBuffer]
+    [setupMicrophone, scheduleAudioChunk, flushUserBuffer, startStallTimer]
   );
 
   const disconnect = useCallback(() => {
     if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
     if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
+    if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
 
     try { wsRef.current?.send(JSON.stringify({ type: 'end_session' })); } catch (_) {}
     wsRef.current?.close();
@@ -288,38 +319,32 @@ export function useVoiceSession({ onEvent } = {}) {
 
     setStatus('idle');
     setIsAISpeaking(false);
+    setIsStalled(false);
   }, []);
 
-  /**
-   * Inject a text message into the live Gemini session.
-   * Used to send <<SYSTEM_EVENT>> orchestration cues when timers expire.
-   */
   const injectText = useCallback((text) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'inject_text', text }));
+      console.log('[timing] request_sent', Date.now(), text);
+      // Start stall timer after injection (we expect AI to respond)
+      startStallTimer();
     }
-  }, []);
+  }, [startStallTimer]);
 
-  /**
-   * Send a video frame (base64 JPEG) to the backend for Gemini visual analysis.
-   */
-  const sendVideoFrame = useCallback((base64Data) => {
+  const sendScreenFrame = useCallback((base64Data) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'video_frame', data: base64Data }));
+      wsRef.current.send(JSON.stringify({ type: 'screen_frame', data: base64Data }));
+      console.log('[timing] screen_frame_sent', Date.now());
     }
   }, []);
 
-  /**
-   * Signal end of session to backend and stop mic/audio, but keep the WebSocket
-   * open to receive the AI-generated feedback report.
-   * Call disconnect() once the report arrives to finish cleanup.
-   */
   const requestReport = useCallback(() => {
     if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
     if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
-    // Tell backend to close Gemini and generate the report
+    if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+
     try { wsRef.current?.send(JSON.stringify({ type: 'end_session' })); } catch (_) {}
-    // Stop mic and audio processing — no more audio needed
+
     processorRef.current?.disconnect();
     sourceRef.current?.disconnect();
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -332,24 +357,20 @@ export function useVoiceSession({ onEvent } = {}) {
     outputCtxRef.current = null;
     nextPlayTimeRef.current = 0;
     setIsAISpeaking(false);
-    // WS stays open — backend will send { type: 'report' } then close
+    setIsStalled(false);
   }, []);
 
   return {
-    /** 'idle' | 'connecting' | 'active' | 'error' */
     status,
-    /** true while Gemini audio is playing */
     isAISpeaking,
-    /** ref to the raw mic MediaStream */
+    isStalled,
     micStream: micStreamRef,
-    /** accumulated transcript entries { role, text, timestamp, isFinal } */
     transcript,
-    /** AI-generated report data once session ends, null until then */
     reportData,
     connect,
     disconnect,
     injectText,
-    sendVideoFrame,
+    sendScreenFrame,
     requestReport,
   };
 }

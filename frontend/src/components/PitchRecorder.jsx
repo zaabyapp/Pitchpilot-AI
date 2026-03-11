@@ -1,22 +1,18 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useVoiceSession } from '../hooks/useVoiceSession';
+import { useScreenShare } from '../hooks/useScreenShare';
 
-const PITCH_DURATION = 45;   // seconds
-const QA_DURATION = 300;     // 5 minutes in seconds
-const QA_WARNING_AT = 20;    // seconds remaining when warning kicks in
-const GRACE_PERIOD = 15;     // seconds after QA timer before hard inject
-const COACH_REDIRECT_DELAY = 45000; // ms to wait after coaching starts before redirect
+const PITCH_DURATION = 45; // seconds
 
 // Finite states for the simulation
-// onboarding → pitch_intro → pitch_active → qa_waiting → qa_active → qa_warning → coaching → done
 const PHASE = {
   ONBOARDING: 'onboarding',
-  PITCH_INTRO: 'pitch_intro',   // AI finished onboarding, timer frozen — waiting to start
+  PITCH_INTRO: 'pitch_intro',
   PITCH_ACTIVE: 'pitch_active',
-  QA_WAITING: 'qa_waiting',     // pitch ended, injected — waiting for AI first Q&A turn (qa_start)
+  QA_WAITING: 'qa_waiting',
   QA_ACTIVE: 'qa_active',
-  QA_WARNING: 'qa_warning',
-  COACHING: 'coaching',
+  COACHING: 'coaching',     // AI giving coaching feedback (one-time closing)
+  POST_SIM: 'post_sim',    // Post-simulation coaching chat
   DONE: 'done',
 };
 
@@ -29,26 +25,24 @@ function formatTime(seconds) {
 export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const [simPhase, setSimPhase] = useState(PHASE.ONBOARDING);
   const [pitchTimeLeft, setPitchTimeLeft] = useState(PITCH_DURATION);
-  const [qaTimeLeft, setQaTimeLeft] = useState(QA_DURATION);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
+  const [simulationClosingDone, setSimulationClosingDone] = useState(false);
 
   const videoRef = useRef(null);
   const cameraStreamRef = useRef(null);
   const pitchTimerRef = useRef(null);
-  const qaTimerRef = useRef(null);
-  const graceTimerRef = useRef(null);
-  const coachRedirectRef = useRef(null);
-  const videoFrameIntervalRef = useRef(null);
   const simPhaseRef = useRef(simPhase);
   const questionsAnsweredRef = useRef(questionsAnswered);
   const injectTextRef = useRef(null);
   const startPitchCountdownRef = useRef(null);
 
-  // Keep refs in sync for use inside callbacks
   simPhaseRef.current = simPhase;
   questionsAnsweredRef.current = questionsAnswered;
+
+  // Screen share
+  const { isScreenSharing, startScreenShare, stopScreenShare, captureFrame: captureScreenFrame, startPeriodicCapture, stopPeriodicCapture } = useScreenShare();
 
   // ---------------------------------------------------------------------------
   // Event handler from the voice session
@@ -58,10 +52,13 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     if (event.type === 'phase_event' && event.phase === 'pitch_start') {
       startPitchCountdownRef.current?.();
     } else if (event.type === 'phase_event' && event.phase === 'qa_start') {
-      // Backend confirmed AI asked first Q&A question — now start the 5-min timer
       setSimPhase(PHASE.QA_ACTIVE);
+    } else if (event.type === 'phase_event' && event.phase === 'qa_answer_counted') {
+      setQuestionsAnswered(event.count ?? 0);
+    } else if (event.type === 'phase_event' && event.phase === 'qa_complete') {
+      // Transition to coaching — simulation closing
+      setSimPhase(PHASE.COACHING);
     } else if (event.type === 'report') {
-      // Report received — do full WS cleanup then navigate
       disconnectRef.current?.();
       onSessionEnd({
         report: event.data,
@@ -74,51 +71,45 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     }
   }, [onSessionEnd, sessionId, language]);
 
-  const { status, isAISpeaking, micStream, transcript, connect, disconnect, injectText, sendVideoFrame, requestReport } =
+  const { status, isAISpeaking, isStalled, micStream, transcript, connect, disconnect, injectText, sendScreenFrame, requestReport } =
     useVoiceSession({ onEvent: handleEvent });
 
-  // Keep disconnect + injectText in refs so handleEvent can call them without stale closure issues
   const disconnectRef = useRef(disconnect);
   disconnectRef.current = disconnect;
   injectTextRef.current = injectText;
 
-  // Track user responses during Q&A to count questions answered
-  useEffect(() => {
-    if (simPhase === PHASE.QA_WAITING || simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING) {
-      const userEntries = transcript.filter((e) => e.role === 'user' && e.isFinal);
-      setQuestionsAnswered(userEntries.length);
-    }
-  }, [transcript, simPhase]);
-
   // ---------------------------------------------------------------------------
-  // Pitch timer: start countdown
+  // Pitch timer
   // ---------------------------------------------------------------------------
 
   const startPitchCountdown = useCallback(() => {
-    // Guard: only start if we haven't passed the pitch phase yet
     const phase = simPhaseRef.current;
     if (phase === PHASE.PITCH_ACTIVE || phase === PHASE.QA_WAITING ||
-        phase === PHASE.QA_ACTIVE || phase === PHASE.QA_WARNING ||
-        phase === PHASE.COACHING || phase === PHASE.DONE) return;
+        phase === PHASE.QA_ACTIVE || phase === PHASE.COACHING ||
+        phase === PHASE.POST_SIM || phase === PHASE.DONE) return;
 
     clearInterval(pitchTimerRef.current);
     setSimPhase(PHASE.PITCH_ACTIVE);
     let timeLeft = PITCH_DURATION;
     setPitchTimeLeft(timeLeft);
+
+    // Capture one screen frame at pitch start
+    if (isScreenSharing) {
+      const frame = captureScreenFrame();
+      if (frame) sendScreenFrame(frame);
+    }
+
     pitchTimerRef.current = setInterval(() => {
       timeLeft -= 1;
-      console.log('[PitchTimer] tick:', timeLeft);
       setPitchTimeLeft(timeLeft);
       if (timeLeft <= 0) {
         clearInterval(pitchTimerRef.current);
         injectTextRef.current?.('<<SYSTEM_EVENT>> pitch_timer_ended');
-        // Wait for qa_start event from backend (fires after AI's first Q&A turn)
         setSimPhase(PHASE.QA_WAITING);
       }
     }, 1000);
-  }, []);
+  }, [isScreenSharing, captureScreenFrame, sendScreenFrame]);
 
-  // Keep startPitchCountdown in a ref so handleEvent (defined earlier) can call it
   startPitchCountdownRef.current = startPitchCountdown;
 
   // Transition ONBOARDING → PITCH_INTRO after 3 final AI turns
@@ -128,6 +119,61 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     if (finalAiTurns >= 3) {
       setSimPhase(PHASE.PITCH_INTRO);
     }
+  }, [transcript, simPhase]);
+
+  // ---------------------------------------------------------------------------
+  // Screen frame periodic capture during formal simulation (pitch + Q&A)
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!isScreenSharing) return;
+
+    const isFormalSim = simPhase === PHASE.PITCH_ACTIVE || simPhase === PHASE.QA_WAITING ||
+                        simPhase === PHASE.QA_ACTIVE;
+    if (isFormalSim) {
+      startPeriodicCapture(15000, (base64) => sendScreenFrame(base64));
+    } else {
+      stopPeriodicCapture();
+    }
+
+    return () => stopPeriodicCapture();
+  }, [simPhase, isScreenSharing, startPeriodicCapture, stopPeriodicCapture, sendScreenFrame]);
+
+  // Stop screen share capture when simulation ends
+  useEffect(() => {
+    if (simPhase === PHASE.COACHING || simPhase === PHASE.POST_SIM || simPhase === PHASE.DONE) {
+      stopPeriodicCapture();
+    }
+  }, [simPhase, stopPeriodicCapture]);
+
+  // ---------------------------------------------------------------------------
+  // COACHING → POST_SIM transition (after first AI coaching turn)
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (simPhase !== PHASE.COACHING || simulationClosingDone) return;
+    // After the first AI turn in coaching phase, transition to POST_SIM
+    const coachingAiTurns = transcript.filter((e) => e.role === 'ai' && e.isFinal);
+    if (coachingAiTurns.length > 0 && !isAISpeaking) {
+      setSimulationClosingDone(true);
+      setSimPhase(PHASE.POST_SIM);
+    }
+  }, [simPhase, transcript, isAISpeaking, simulationClosingDone]);
+
+  // ---------------------------------------------------------------------------
+  // Voice command detection: "end session" / "terminar sesión" in POST_SIM
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (simPhase !== PHASE.POST_SIM) return;
+    const lastUser = [...transcript].reverse().find((e) => e.role === 'user' && e.isFinal);
+    if (lastUser) {
+      const lower = lastUser.text.toLowerCase();
+      if (lower.includes('end session') || lower.includes('terminar sesión') || lower.includes('terminar sesion')) {
+        handleEndSession();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, simPhase]);
 
   // ---------------------------------------------------------------------------
@@ -159,94 +205,14 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
       clearAllTimers();
       disconnectRef.current?.();
       cameraStreamRef.current?.getTracks().forEach(t => t.stop());
+      stopScreenShare();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clearAllTimers = () => {
     clearInterval(pitchTimerRef.current);
-    clearInterval(qaTimerRef.current);
-    clearTimeout(graceTimerRef.current);
-    clearTimeout(coachRedirectRef.current);
-    clearInterval(videoFrameIntervalRef.current);
   };
-
-  // ---------------------------------------------------------------------------
-  // Q&A timer (5 min)
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (simPhase !== PHASE.QA_ACTIVE && simPhase !== PHASE.QA_WARNING) return;
-
-    qaTimerRef.current = setInterval(() => {
-      setQaTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(qaTimerRef.current);
-          // Grace period before hard interrupt
-          graceTimerRef.current = setTimeout(() => {
-            if (simPhaseRef.current !== PHASE.COACHING && simPhaseRef.current !== PHASE.DONE) {
-              injectText('<<SYSTEM_EVENT>> qa_timer_ended');
-              setSimPhase(PHASE.COACHING);
-            }
-          }, GRACE_PERIOD * 1000);
-          return 0;
-        }
-        if (prev === QA_WARNING_AT) {
-          setSimPhase(PHASE.QA_WARNING);
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(qaTimerRef.current);
-  }, [simPhase, injectText]);
-
-  // ---------------------------------------------------------------------------
-  // Video frame capture — send to backend every 30s during Q&A for visual analysis
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (simPhase !== PHASE.QA_ACTIVE && simPhase !== PHASE.QA_WARNING) {
-      clearInterval(videoFrameIntervalRef.current);
-      return;
-    }
-
-    const captureFrame = () => {
-      const video = videoRef.current;
-      if (!video || video.videoWidth === 0 || isVideoOff) return;
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 640;
-        canvas.height = 360;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, 640, 360);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-        const base64 = dataUrl.split(',')[1];
-        if (base64) sendVideoFrame(base64);
-      } catch (_) { /* canvas capture may fail silently */ }
-    };
-
-    // Capture immediately, then every 30 seconds
-    captureFrame();
-    videoFrameIntervalRef.current = setInterval(captureFrame, 30000);
-
-    return () => clearInterval(videoFrameIntervalRef.current);
-  }, [simPhase, isVideoOff, sendVideoFrame]);
-
-  // ---------------------------------------------------------------------------
-  // Coaching phase → auto redirect
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    if (simPhase !== PHASE.COACHING) return;
-
-    coachRedirectRef.current = setTimeout(() => {
-      handleEndSession();
-    }, COACH_REDIRECT_DELAY);
-
-    return () => clearTimeout(coachRedirectRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [simPhase]);
 
   // ---------------------------------------------------------------------------
   // Session actions
@@ -254,11 +220,11 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
 
   const handleEndSession = useCallback(() => {
     clearAllTimers();
+    stopScreenShare();
     cameraStreamRef.current?.getTracks().forEach(t => t.stop());
     setSimPhase(PHASE.DONE);
-    // Send end_session + stop mic/audio, keep WS open to receive report
     requestReport();
-  }, [requestReport]);
+  }, [requestReport, stopScreenShare]);
 
   const toggleMute = () => {
     micStream.current?.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
@@ -268,6 +234,14 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   const toggleVideo = () => {
     cameraStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
     setIsVideoOff(prev => !prev);
+  };
+
+  const handleScreenShare = async () => {
+    if (isScreenSharing) {
+      stopScreenShare();
+    } else {
+      await startScreenShare();
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -294,33 +268,26 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     [PHASE.PITCH_ACTIVE]: language === 'es' ? 'Tu Pitch — 45s' : 'Your Pitch — 45s',
     [PHASE.QA_WAITING]: language === 'es' ? 'Sesión de Preguntas' : 'Q&A Session',
     [PHASE.QA_ACTIVE]: language === 'es' ? 'Sesión de Preguntas' : 'Q&A Session',
-    [PHASE.QA_WARNING]: language === 'es' ? '¡Tiempo casi agotado!' : 'Time almost up!',
     [PHASE.COACHING]: language === 'es' ? 'Feedback del Coach' : 'Coach Feedback',
+    [PHASE.POST_SIM]: language === 'es' ? 'Coach disponible' : 'Coach Available',
     [PHASE.DONE]: language === 'es' ? 'Sesión finalizada' : 'Session ended',
   }[simPhase];
 
-  // Timer display config
+  // Only show pitch timer during pitch phases
   const showPitchTimerFrozen = simPhase === PHASE.PITCH_INTRO;
   const showPitchTimer = simPhase === PHASE.PITCH_ACTIVE;
-  // QA_WAITING shows frozen 5:00; QA_ACTIVE/WARNING show live countdown
-  const showQaTimerFrozen = simPhase === PHASE.QA_WAITING;
-  const showQaTimer = simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING;
-  const isWarning = simPhase === PHASE.QA_WARNING || (showPitchTimer && pitchTimeLeft <= 10);
+  const isWarning = showPitchTimer && pitchTimeLeft <= 10;
 
   const timerColor = isWarning
     ? 'text-red-400 border-red-400/40 bg-red-500/10'
     : showPitchTimer || showPitchTimerFrozen
     ? 'text-orange-400 border-orange-400/40 bg-orange-500/10'
-    : 'text-[#7c5cff] border-[#7c5cff]/40 bg-[#7c5cff]/10';
+    : '';
 
   const timerValue = showPitchTimerFrozen
     ? formatTime(PITCH_DURATION)
     : showPitchTimer
     ? formatTime(pitchTimeLeft)
-    : showQaTimerFrozen
-    ? formatTime(QA_DURATION)
-    : showQaTimer
-    ? formatTime(qaTimeLeft)
     : null;
 
   // ---------------------------------------------------------------------------
@@ -375,23 +342,31 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
           </span>
         </div>
 
-        {/* Timer display */}
+        {/* Timer display — ONLY pitch timer */}
         {timerValue && (
           <div className={`flex items-center gap-3 border rounded-xl px-5 py-2 ${timerColor} ${isWarning ? 'animate-pulse' : ''}`}>
             <span className="material-symbols-outlined text-base">timer</span>
             <span className="text-2xl font-black tabular-nums tracking-tight">{timerValue}</span>
-            <span className="text-[10px] font-bold uppercase opacity-70">
-              {showPitchTimer || showPitchTimerFrozen ? 'Pitch' : 'Q&A'}
+            <span className="text-[10px] font-bold uppercase opacity-70">Pitch</span>
+          </div>
+        )}
+
+        {/* Post-simulation coaching banner */}
+        {(simPhase === PHASE.COACHING || simPhase === PHASE.POST_SIM) && (
+          <div className="flex items-center gap-2 border border-emerald-400/30 bg-emerald-400/10 rounded-xl px-5 py-2 text-emerald-400">
+            <span className="material-symbols-outlined text-base">psychology</span>
+            <span className="text-xs font-bold uppercase tracking-wider">
+              {language === 'es' ? 'Modo Coach' : 'Coach Mode'}
             </span>
           </div>
         )}
 
-        {/* Coaching mode banner */}
-        {simPhase === PHASE.COACHING && (
-          <div className="flex items-center gap-2 border border-emerald-400/30 bg-emerald-400/10 rounded-xl px-5 py-2 text-emerald-400">
-            <span className="material-symbols-outlined text-base">psychology</span>
+        {/* Stall indicator */}
+        {isStalled && simPhase !== PHASE.PITCH_ACTIVE && (
+          <div className="flex items-center gap-2 border border-amber-400/30 bg-amber-400/10 rounded-xl px-5 py-2 text-amber-400 animate-pulse">
+            <span className="material-symbols-outlined text-base">hourglass_top</span>
             <span className="text-xs font-bold uppercase tracking-wider">
-              {language === 'es' ? 'Modo Coach — Redirigiendo en ~45s' : 'Coach Mode — Redirecting in ~45s'}
+              {language === 'es' ? 'Pensando…' : 'Still thinking…'}
             </span>
           </div>
         )}
@@ -424,7 +399,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
               <span className="text-[10px] font-bold uppercase text-red-400">Muted</span>
             </div>
           )}
-          {/* Pitch active indicator on video */}
+          {/* Pitch active indicator */}
           {(simPhase === PHASE.PITCH_INTRO || simPhase === PHASE.PITCH_ACTIVE) && (
             <div className="absolute top-4 right-4 bg-orange-500/20 border border-orange-400/40 px-3 py-1 rounded-lg flex items-center gap-1.5">
               <span className="relative flex h-2 w-2">
@@ -432,6 +407,13 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-400" />
               </span>
               <span className="text-[10px] font-bold uppercase text-orange-400">Pitching</span>
+            </div>
+          )}
+          {/* Screen share indicator */}
+          {isScreenSharing && (
+            <div className="absolute bottom-4 right-4 bg-emerald-500/20 border border-emerald-400/40 px-3 py-1 rounded-lg flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-sm text-emerald-400">screen_share</span>
+              <span className="text-[10px] font-bold uppercase text-emerald-400">Sharing</span>
             </div>
           )}
         </div>
@@ -451,16 +433,16 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                   ? 'border-[#7c5cff] bg-[#7c5cff]/10'
                   : isConnecting
                   ? 'border-slate-600 bg-white/5'
-                  : simPhase === PHASE.COACHING
+                  : (simPhase === PHASE.COACHING || simPhase === PHASE.POST_SIM)
                   ? 'border-emerald-400 bg-emerald-400/10'
                   : 'border-white/10 bg-white/5'
               }`}>
-                <span className={`material-symbols-outlined text-2xl ${simPhase === PHASE.COACHING ? 'text-emerald-400' : 'text-[#7c5cff]'}`}>
+                <span className={`material-symbols-outlined text-2xl ${(simPhase === PHASE.COACHING || simPhase === PHASE.POST_SIM) ? 'text-emerald-400' : 'text-[#7c5cff]'}`}>
                   {isAISpeaking
                     ? 'record_voice_over'
                     : isConnecting
                     ? 'hourglass_empty'
-                    : simPhase === PHASE.COACHING
+                    : (simPhase === PHASE.COACHING || simPhase === PHASE.POST_SIM)
                     ? 'psychology'
                     : 'mic'}
                 </span>
@@ -477,7 +459,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                   key={i}
                   className={`w-1.5 rounded-full transition-all duration-150 ${
                     isAISpeaking
-                      ? simPhase === PHASE.COACHING ? 'bg-emerald-400' : 'bg-[#7c5cff]'
+                      ? (simPhase === PHASE.COACHING || simPhase === PHASE.POST_SIM) ? 'bg-emerald-400' : 'bg-[#7c5cff]'
                       : 'bg-white/10'
                   }`}
                   style={{
@@ -515,18 +497,16 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                     ? (language === 'es' ? 'El AI está preguntando…' : 'AI is asking…')
                     : (language === 'es' ? 'Responde la pregunta' : 'Answer the question')
                 )}
-                {simPhase === PHASE.QA_WARNING && (
-                  <span className="text-red-400 font-bold">
-                    {language === 'es' ? '¡Menos de 20 segundos!' : 'Less than 20 seconds left!'}
-                  </span>
-                )}
                 {simPhase === PHASE.COACHING && (
                   language === 'es' ? 'El coach está dando tu resumen…' : 'Your coach is giving live feedback…'
+                )}
+                {simPhase === PHASE.POST_SIM && (
+                  language === 'es' ? 'Pregunta lo que quieras o termina la sesión' : 'Ask anything or end the session'
                 )}
               </p>
 
               {/* Q&A question counter */}
-              {(simPhase === PHASE.QA_WAITING || simPhase === PHASE.QA_ACTIVE || simPhase === PHASE.QA_WARNING) && questionsAnswered > 0 && (
+              {(simPhase === PHASE.QA_WAITING || simPhase === PHASE.QA_ACTIVE) && questionsAnswered > 0 && (
                 <p className="text-slate-500 text-xs">
                   {language === 'es'
                     ? `${questionsAnswered} respuesta${questionsAnswered > 1 ? 's' : ''} dada${questionsAnswered > 1 ? 's' : ''}`
@@ -541,7 +521,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
               </p>
             </div>
 
-            {/* Manual start-timer button — visible in PITCH_INTRO phase */}
+            {/* Manual start-timer button */}
             {simPhase === PHASE.PITCH_INTRO && !isAISpeaking && (
               <button
                 onClick={startPitchCountdown}
@@ -552,7 +532,27 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
               </button>
             )}
 
-            {isActive && !isMuted && (
+            {/* Post-simulation: report ready card */}
+            {simPhase === PHASE.POST_SIM && (
+              <div className="bg-emerald-400/5 border border-emerald-400/20 rounded-xl p-4 text-center space-y-3 max-w-xs">
+                <p className="text-emerald-400 text-sm font-medium">
+                  {language === 'es'
+                    ? 'Tu reporte está listo. Termina la sesión cuando quieras revisarlo.'
+                    : 'Your report is ready. End the session when you want to review it.'}
+                </p>
+                <button
+                  onClick={handleEndSession}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold px-6 py-2.5 rounded-xl transition-all w-full"
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="material-symbols-outlined text-base">assignment</span>
+                    {language === 'es' ? 'Terminar y ver reporte' : 'End Session & View Report'}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {isActive && !isMuted && simPhase !== PHASE.POST_SIM && (
               <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full">
                 <span className="material-symbols-outlined text-base text-[#7c5cff]">mic</span>
                 <span className="text-xs text-slate-400">
@@ -605,6 +605,18 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
             <span className="text-[9px] font-bold uppercase mt-1">{isVideoOff ? 'Cam On' : 'Cam Off'}</span>
           </button>
 
+          {/* Screen share button */}
+          <button
+            onClick={handleScreenShare}
+            disabled={!isActive}
+            className={`flex flex-col items-center justify-center size-14 rounded-xl hover:bg-white/5 transition-colors disabled:opacity-30 ${
+              isScreenSharing ? 'text-emerald-400' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span className="material-symbols-outlined text-2xl">{isScreenSharing ? 'stop_screen_share' : 'screen_share'}</span>
+            <span className="text-[9px] font-bold uppercase mt-1">{isScreenSharing ? 'Stop' : 'Share'}</span>
+          </button>
+
           <div className="w-px h-8 bg-white/10 mx-2" />
 
           <button
@@ -621,7 +633,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
 
       <div className="pb-4 text-center">
         <p className="text-[9px] text-slate-600 uppercase tracking-[0.3em]">
-          Voice Mode • Gemini 2.5 Flash Native Audio • Charon
+          Voice Mode • Gemini 2.0 Flash Live • Charon
         </p>
       </div>
     </div>
