@@ -3,7 +3,6 @@ import LanguageSelector from './components/LanguageSelector';
 import PitchRecorder from './components/PitchRecorder';
 import FeedbackReport from './components/FeedbackReport';
 import NoFeedback from './components/NoFeedback';
-import SessionTranscript from './components/SessionTranscript';
 import BuilderResources from './components/BuilderResources';
 import ResourceDetail from './components/ResourceDetail';
 import Instructions from './components/Instructions';
@@ -38,14 +37,6 @@ function App() {
 
   const handleNewSession = () => {
     handleStartSession();
-  };
-
-  const handleViewTranscript = () => {
-    setScreen('transcript');
-  };
-
-  const handleBackFromTranscript = () => {
-    setScreen('reporting');
   };
 
   const handleSelectResource = (resource) => {
@@ -98,22 +89,6 @@ function App() {
     );
   }
 
-  if (screen === 'transcript') {
-    return (
-      <SessionTranscript
-        sessionId={sessionId}
-        date={new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-        transcript={sessionData?.transcript ?? []}
-        language={language ?? 'en'}
-        onBack={handleBackFromTranscript}
-        onNavInstructions={navInstructions}
-        onNavResources={navResources}
-        onNavReporting={navReporting}
-        onStartSession={handleStartSession}
-      />
-    );
-  }
-
   if (screen === 'reporting') {
     if (hasCompletedSession) {
       return (
@@ -122,7 +97,6 @@ function App() {
           language={language ?? 'en'}
           feedbackData={sessionData?.report ?? null}
           sessionData={sessionData}
-          onViewTranscript={handleViewTranscript}
           onNewSession={handleNewSession}
           onNavInstructions={navInstructions}
           onNavResources={navResources}

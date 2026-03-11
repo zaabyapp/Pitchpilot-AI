@@ -9,32 +9,27 @@ const TRANSLATIONS = {
     title: 'Pitch Performance Report',
     subtitle: 'AI-generated analysis of your session',
     level: 'Level',
+    levels: { 'Strong Pitch': 'Strong Pitch', 'Good Pitch': 'Good Pitch', 'Needs Work': 'Needs Work' },
     scoreReady: 'Your pitch analysis is ready',
     exportReport: 'Export Report',
     shareReport: 'Share Report',
+    shareTitle: 'PitchPilot AI Report',
+    shareText: (id, s) => `Session ${id} — Score: ${s}/100`,
     questionsAnswered: (n) => `${n} question${n !== 1 ? 's' : ''} answered`,
-    whatWentWell: 'What You Did Well',
-    businessRecs: 'Strategic Advisor: Business Recommendations',
-    confusingMoments: 'Strategic Advisor: What Was Confusing',
-    simplification: 'Simplification',
-    actionable: 'Actionable',
-    topImprovements: 'Top Improvements',
+    whatWentWell: 'What you did well',
     deliveryMetrics: 'Delivery Metrics',
-    videoPresence: 'Video Presence',
-    eyeContact: 'Eye Contact',
-    posture: 'Posture',
+    metricLabels: { clarity: 'Clarity', energy: 'Energy', pacing: 'Pacing' },
     voiceAnalysis: 'Voice Analysis',
-    avgPitch: 'Average Pitch',
     wpm: 'Words Per Minute',
     sentimentBalance: 'Sentiment Balance',
-    practicePrompts: 'Recommended Practice Prompts',
+    positive: 'Positive',
+    neutral: 'Neutral',
+    negative: 'Negative',
     actionItems: 'Action Items',
     actionItemsSub: 'Your next steps to improve this pitch',
     communicationFocus: 'Communication Focus',
     businessFocus: 'Business Focus',
     audienceImpact: 'Audience Impact',
-    viewTranscript: 'View Session Transcript',
-    viewTranscriptSub: 'Open full transcript and detailed analysis',
     session: 'Session',
     aiEngine: 'AI Analysis Engine',
     newSession: 'New Session',
@@ -46,32 +41,27 @@ const TRANSLATIONS = {
     title: 'Informe de Desempeño del Pitch',
     subtitle: 'Análisis generado por IA de tu sesión',
     level: 'Nivel',
+    levels: { 'Strong Pitch': 'Pitch Sólido', 'Good Pitch': 'Buen Pitch', 'Needs Work': 'Necesita Mejorar' },
     scoreReady: 'Tu análisis del pitch está listo',
     exportReport: 'Exportar Informe',
     shareReport: 'Compartir Informe',
+    shareTitle: 'Informe PitchPilot AI',
+    shareText: (id, s) => `Sesión ${id} — Puntaje: ${s}/100`,
     questionsAnswered: (n) => `${n} pregunta${n !== 1 ? 's' : ''} respondida${n !== 1 ? 's' : ''}`,
-    whatWentWell: 'Lo Que Hiciste Bien',
-    businessRecs: 'Asesor Estratégico: Recomendaciones de Negocio',
-    confusingMoments: 'Asesor Estratégico: Lo Que Fue Confuso',
-    simplification: 'Simplificación',
-    actionable: 'Accionable',
-    topImprovements: 'Principales Mejoras',
+    whatWentWell: 'Lo que hiciste bien',
     deliveryMetrics: 'Métricas de Presentación',
-    videoPresence: 'Presencia en Video',
-    eyeContact: 'Contacto Visual',
-    posture: 'Postura',
+    metricLabels: { clarity: 'Claridad', energy: 'Energía', pacing: 'Ritmo' },
     voiceAnalysis: 'Análisis de Voz',
-    avgPitch: 'Tono Promedio',
     wpm: 'Palabras por Minuto',
     sentimentBalance: 'Balance de Sentimiento',
-    practicePrompts: 'Ejercicios de Práctica Recomendados',
+    positive: 'Positivo',
+    neutral: 'Neutral',
+    negative: 'Negativo',
     actionItems: 'Elementos de Acción',
     actionItemsSub: 'Tus próximos pasos para mejorar este pitch',
     communicationFocus: 'Enfoque en Comunicación',
     businessFocus: 'Enfoque en Negocios',
     audienceImpact: 'Impacto en la Audiencia',
-    viewTranscript: 'Ver Transcripción de la Sesión',
-    viewTranscriptSub: 'Abrir transcripción completa y análisis detallado',
     session: 'Sesión',
     aiEngine: 'Motor de Análisis IA',
     newSession: 'Nueva Sesión',
@@ -83,7 +73,6 @@ export default function FeedbackReport({
   language = 'en',
   feedbackData = null,
   sessionData = null,
-  onViewTranscript = () => {},
   onNewSession = () => {},
   onNavInstructions = () => {},
   onNavResources = () => {},
@@ -123,24 +112,26 @@ export default function FeedbackReport({
     level,
     summary,
     whatWentWell,
-    businessRecommendations,
-    confusingMoments,
-    topImprovements,
     deliveryMetrics,
-    videoPresence,
     voiceAnalysis,
-    practicePrompts,
     actionItems,
   } = feedbackData;
 
   const circumference = 2 * Math.PI * 58;
   const strokeDashoffset = circumference - ((score ?? 0) / 100) * circumference;
 
-  const colorMap = {
-    orange: { border: 'border-l-orange-400', bg: 'bg-orange-400/10', text: 'text-orange-400' },
-    primary: { border: 'border-l-[#7c5cff]', bg: 'bg-[#7c5cff]/10', text: 'text-[#7c5cff]' },
-    purple: { border: 'border-l-[#a78bfa]', bg: 'bg-[#a78bfa]/10', text: 'text-[#a78bfa]' },
-  };
+  // Parse sentiment values — support both new structured format and legacy string format
+  let sentimentPositive = voiceAnalysis?.sentimentPositive;
+  let sentimentNeutral = voiceAnalysis?.sentimentNeutral;
+  let sentimentNegative = voiceAnalysis?.sentimentNegative;
+  if (sentimentPositive == null && voiceAnalysis?.sentiment) {
+    const m = voiceAnalysis.sentiment.match(/(\d+).*?(\d+).*?(\d+)/);
+    if (m) {
+      sentimentPositive = parseInt(m[1], 10);
+      sentimentNeutral = parseInt(m[2], 10);
+      sentimentNegative = parseInt(m[3], 10);
+    }
+  }
 
   return (
     <div className="relative flex flex-col min-h-screen overflow-hidden bg-[#0B0B0F] text-slate-200 antialiased">
@@ -155,7 +146,7 @@ export default function FeedbackReport({
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-8 py-8 space-y-8">
+        <div className="max-w-5xl mx-auto px-8 py-8 space-y-8">
           {/* Title Section */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/5">
             <div>
@@ -185,7 +176,7 @@ export default function FeedbackReport({
             <div className="flex-1 text-center md:text-left">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20 mb-4" style={{ boxShadow: '0 0 25px -5px rgba(16, 185, 129, 0.2)' }}>
                 <span className="material-symbols-outlined text-sm">verified</span>
-                <span className="text-xs font-bold uppercase tracking-wider">{t.level}: {level}</span>
+                <span className="text-xs font-bold uppercase tracking-wider">{t.level}: {t.levels[level] ?? level}</span>
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">{t.scoreReady}</h2>
               <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">{summary}</p>
@@ -201,7 +192,7 @@ export default function FeedbackReport({
               <button
                 onClick={() => {
                   if (navigator.share) {
-                    navigator.share({ title: 'PitchPilot AI Report', text: `Session ${sessionId} — Score: ${score}/100`, url: window.location.href });
+                    navigator.share({ title: t.shareTitle, text: t.shareText(sessionId, score), url: window.location.href });
                   } else {
                     navigator.clipboard.writeText(window.location.href).catch(() => {});
                   }
@@ -220,208 +211,96 @@ export default function FeedbackReport({
             </div>
           </div>
 
-          {/* Main Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Left Column */}
-            <div className="lg:col-span-8 space-y-8">
-
-              {/* What You Did Well */}
-              {whatWentWell?.length > 0 && (
-                <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl overflow-hidden">
-                  <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                    <h3 className="font-bold text-lg text-white">{t.whatWentWell}</h3>
-                    <span className="material-symbols-outlined text-[#10b981]">task_alt</span>
-                  </div>
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {whatWentWell.map((item, idx) => (
-                      <div key={idx} className="flex items-start gap-3 p-4 bg-[#10b981]/5 border border-[#10b981]/10 rounded-xl">
-                        <span className="material-symbols-outlined text-[#10b981] text-lg">check_circle</span>
-                        <p className="text-sm text-slate-300">{item}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Business Recommendations */}
-              {businessRecommendations?.length > 0 && (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-3">
-                    <div className="h-px flex-1 bg-white/5"></div>
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.businessRecs}</h3>
-                    <div className="h-px flex-1 bg-white/5"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {businessRecommendations.map((rec, idx) => (
-                      <div key={idx} className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6 border-t-2 border-t-[#7c5cff]/40">
-                        <div className="flex items-start gap-4">
-                          <div className="size-10 rounded-xl bg-[#7c5cff]/10 flex items-center justify-center shrink-0">
-                            <span className="material-symbols-outlined text-[#7c5cff] text-xl">lightbulb</span>
-                          </div>
-                          <div className="space-y-2">
-                            <h4 className="font-bold text-white">{rec.title}</h4>
-                            <p className="text-sm text-slate-400 leading-relaxed">{rec.description}</p>
-                            <div className="pt-2">
-                              <span className="text-[10px] font-bold text-[#7c5cff] uppercase tracking-wider block mb-1">{t.actionable}</span>
-                              <p className="text-xs text-slate-300 bg-white/5 rounded-lg p-3">{rec.suggestion}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Confusing Moments */}
-              {confusingMoments?.length > 0 && (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-3">
-                    <div className="h-px flex-1 bg-white/5"></div>
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">{t.confusingMoments}</h3>
-                    <div className="h-px flex-1 bg-white/5"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {confusingMoments.map((moment, idx) => (
-                      <div key={idx} className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6 relative overflow-hidden">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="bg-orange-500/20 text-orange-400 text-[10px] font-black px-2 py-1 rounded">{moment.timestamp}</div>
-                          <span className="material-symbols-outlined text-orange-400 text-xl">help</span>
-                        </div>
-                        <h4 className="font-bold text-slate-200 mb-2">{moment.title}</h4>
-                        <p className="text-xs text-slate-400 leading-relaxed mb-4">{moment.description}</p>
-                        <div className="bg-white/5 border border-white/5 rounded-xl p-3">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.simplification}</span>
-                          <p className="text-[11px] text-slate-300">{moment.simplification}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Right Column */}
-            <div className="lg:col-span-4 space-y-6">
-
-              {/* Top Improvements */}
-              {topImprovements?.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-2">{t.topImprovements}</h3>
-                  {topImprovements.map((imp, idx) => {
-                    const colors = colorMap[imp.color] || colorMap.primary;
-                    return (
-                      <div key={idx} className={`bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-5 border-l-4 ${colors.border}`}>
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className={`size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text}`}>
-                            <span className="material-symbols-outlined text-lg">trending_up</span>
-                          </div>
-                          <h4 className="font-bold text-white">{imp.title}</h4>
-                        </div>
-                        <p className="text-xs text-slate-400 leading-relaxed mb-3">{imp.description}</p>
-                        <div className={`text-[10px] font-bold ${colors.text} uppercase tracking-wider`}>{t.actionable}: {imp.actionable}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Delivery Metrics */}
-              {deliveryMetrics && (
-                <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6">
-                  <h3 className="font-bold text-sm mb-6 flex items-center gap-2 text-white">
-                    <span className="material-symbols-outlined text-[#7c5cff] text-lg">mic_external_on</span>
-                    {t.deliveryMetrics}
-                  </h3>
-                  <div className="space-y-5">
-                    {Object.entries(deliveryMetrics).map(([key, value]) => (
-                      <div key={key} className="space-y-1.5">
-                        <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
-                          <span className="text-slate-400 capitalize">{key}</span>
-                          <span className="text-white">{value}%</span>
-                        </div>
-                        <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                          <div className="h-full bg-[#7c5cff]" style={{ width: `${value}%` }}></div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Video Presence */}
-              {videoPresence && (
-                <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6">
-                  <h3 className="font-bold text-sm mb-4 flex items-center gap-2 text-white">
-                    <span className="material-symbols-outlined text-[#7c5cff] text-lg">videocam</span>
-                    {t.videoPresence}
-                  </h3>
-                  <div className="flex justify-between gap-4">
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="size-14 rounded-full border-2 border-[#7c5cff] border-t-white/10 flex items-center justify-center">
-                        <span className="text-xs font-bold text-white">{videoPresence.eyeContact}%</span>
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t.eyeContact}</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="size-14 rounded-full border-2 border-[#a78bfa] border-t-white/10 flex items-center justify-center">
-                        <span className="text-xs font-bold text-white">{videoPresence.posture}%</span>
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t.posture}</span>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[10px] text-slate-400 italic leading-tight">{videoPresence.quote}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Voice Analysis */}
-          {voiceAnalysis && (
-            <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-8">
-              <h3 className="font-bold text-lg mb-8 flex items-center gap-2 text-white">
-                <span className="material-symbols-outlined text-[#7c5cff]">analytics</span>
-                {t.voiceAnalysis}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.avgPitch}</span>
-                  <div className="text-xl font-bold text-white">{voiceAnalysis.avgPitch}</div>
-                </div>
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.wpm}</span>
-                  <div className="text-xl font-bold text-white">{voiceAnalysis.wpm}</div>
-                </div>
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.sentimentBalance}</span>
-                  <div className="text-xl font-bold text-white">{voiceAnalysis.sentiment}</div>
-                </div>
+          {/* What You Did Well */}
+          {whatWentWell?.length > 0 && (
+            <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl overflow-hidden">
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <h3 className="font-bold text-lg text-white">{t.whatWentWell}</h3>
+                <span className="material-symbols-outlined text-[#10b981]">task_alt</span>
               </div>
-            </div>
-          )}
-
-          {/* Practice Prompts */}
-          {practicePrompts?.length > 0 && (
-            <div className="space-y-6">
-              <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#7c5cff] text-lg">psychology</span>
-                {t.practicePrompts}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {practicePrompts.map((prompt, idx) => (
-                  <div key={idx} className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6 hover:border-[#7c5cff]/30 transition-all cursor-pointer group">
-                    <div className="size-10 rounded-xl bg-[#7c5cff]/10 flex items-center justify-center mb-4 text-[#7c5cff]">
-                      <span className="material-symbols-outlined">exercise</span>
-                    </div>
-                    <h4 className="font-bold text-white mb-2">{prompt.title}</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed">{prompt.description}</p>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {whatWentWell.map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-3 p-4 bg-[#10b981]/5 border border-[#10b981]/10 rounded-xl">
+                    <span className="material-symbols-outlined text-[#10b981] text-lg">check_circle</span>
+                    <p className="text-sm text-slate-300">{item}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
+          {/* Metrics Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Delivery Metrics */}
+            {deliveryMetrics && (
+              <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6">
+                <h3 className="font-bold text-sm mb-6 flex items-center gap-2 text-white">
+                  <span className="material-symbols-outlined text-[#7c5cff] text-lg">mic_external_on</span>
+                  {t.deliveryMetrics}
+                </h3>
+                <div className="space-y-5">
+                  {Object.entries(deliveryMetrics).map(([key, value]) => (
+                    <div key={key} className="space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                        <span className="text-slate-400">{t.metricLabels[key] ?? key}</span>
+                        <span className="text-white">{value}%</span>
+                      </div>
+                      <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#7c5cff]" style={{ width: `${value}%` }}></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Voice Analysis */}
+            {voiceAnalysis && (
+              <div className="bg-[#13131A]/60 backdrop-blur-2xl border border-white/5 rounded-2xl p-6">
+                <h3 className="font-bold text-sm mb-6 flex items-center gap-2 text-white">
+                  <span className="material-symbols-outlined text-[#7c5cff] text-lg">analytics</span>
+                  {t.voiceAnalysis}
+                </h3>
+                <div className="space-y-5">
+                  {/* Words Per Minute */}
+                  <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{t.wpm}</span>
+                    <div className="text-xl font-bold text-white">{voiceAnalysis.wpm}</div>
+                  </div>
+
+                  {/* Sentiment Balance */}
+                  {sentimentPositive != null && (
+                    <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-3">{t.sentimentBalance}</span>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-bold text-[#10b981] w-16 uppercase tracking-wider">{t.positive}</span>
+                          <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-[#10b981] rounded-full" style={{ width: `${sentimentPositive}%` }}></div>
+                          </div>
+                          <span className="text-xs font-bold text-white w-10 text-right">{sentimentPositive}%</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-bold text-slate-400 w-16 uppercase tracking-wider">{t.neutral}</span>
+                          <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-slate-400 rounded-full" style={{ width: `${sentimentNeutral}%` }}></div>
+                          </div>
+                          <span className="text-xs font-bold text-white w-10 text-right">{sentimentNeutral}%</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-bold text-orange-400 w-16 uppercase tracking-wider">{t.negative}</span>
+                          <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-orange-400 rounded-full" style={{ width: `${sentimentNegative}%` }}></div>
+                          </div>
+                          <span className="text-xs font-bold text-white w-10 text-right">{sentimentNegative}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Action Items */}
           {actionItems && (
@@ -498,24 +377,6 @@ export default function FeedbackReport({
               </div>
             </>
           )}
-
-          {/* View Transcript */}
-          <div className="pt-4">
-            <button onClick={onViewTranscript} className="block w-full bg-[#13131A]/60 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 hover:bg-white/5 transition-all group text-left">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="size-12 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-white transition-colors">
-                    <span className="material-symbols-outlined">subject</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-lg">{t.viewTranscript}</h4>
-                    <p className="text-xs text-slate-500">{t.viewTranscriptSub}</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-slate-500 group-hover:text-[#7c5cff] group-hover:translate-x-1 transition-all">chevron_right</span>
-              </div>
-            </button>
-          </div>
 
           {/* Footer */}
           <div className="flex justify-center pt-8 pb-12">
