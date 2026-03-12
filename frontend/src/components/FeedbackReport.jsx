@@ -186,16 +186,34 @@ export default function FeedbackReport({
             <div className="flex flex-col gap-3 shrink-0">
               <button
                 onClick={async () => {
-                  const el = document.getElementById('pdf-export-content');
-                  if (!el) return;
-                  el.style.display = 'block';
-                  const canvas = await html2canvas(el, { scale: 2, useCORS: true });
-                  el.style.display = 'none';
+                  const element = document.getElementById('pdf-export-content');
+                  if (!element) return;
+                  element.style.display = 'block';
+                  const canvas = await html2canvas(element, {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    windowWidth: element.scrollWidth,
+                    windowHeight: element.scrollHeight,
+                  });
+                  element.style.display = 'none';
                   const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                  const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4' });
-                  const pdfWidth = pdf.internal.pageSize.getWidth();
-                  const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-                  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                  const pdf = new jsPDF('p', 'mm', 'a4');
+                  const pageWidth = pdf.internal.pageSize.getWidth();
+                  const pageHeight = pdf.internal.pageSize.getHeight();
+                  const imgWidth = pageWidth;
+                  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                  let heightLeft = imgHeight;
+                  let position = 0;
+                  pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                  heightLeft -= pageHeight;
+                  while (heightLeft > 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                  }
                   pdf.save(`pitchpilot-report-${sessionId}.pdf`);
                 }}
                 className="flex items-center justify-center gap-2 h-11 px-6 bg-[#7c5cff] text-white text-sm font-bold rounded-xl hover:bg-[#7c5cff]/90 transition-all shadow-lg shadow-[#7c5cff]/20"
@@ -417,6 +435,8 @@ export default function FeedbackReport({
           fontFamily: 'sans-serif',
           fontSize: '14px',
           lineHeight: '1.6',
+          overflow: 'visible',
+          boxSizing: 'border-box',
         }}
       >
         <div style={{ borderBottom: '2px solid #7c5cff', paddingBottom: '16px', marginBottom: '24px' }}>
