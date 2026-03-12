@@ -11,6 +11,7 @@ function App() {
   const [screen, setScreen] = useState('landing');
   const [language, setLanguage] = useState(null);
   const [sessionId, setSessionId] = useState(null);
+  const [sessionMode, setSessionMode] = useState('practice'); // 'practice' | 'chat'
   const [hasCompletedSession, setHasCompletedSession] = useState(false);
   const [selectedResource, setSelectedResource] = useState(null);
   const [sessionData, setSessionData] = useState(null); // { transcript, questionsAnswered, ... }
@@ -20,11 +21,18 @@ function App() {
     setLanguage(null);
   };
 
-  const handleLanguageSelect = (lang) => {
+  const handleLanguageSelect = ({ language: lang, mode }) => {
     setLanguage(lang);
+    setSessionMode(mode ?? 'practice');
     const id = `#${Date.now().toString(36).toUpperCase()}`;
     setSessionId(id);
     setScreen('session');
+  };
+
+  const handleReset = () => {
+    setScreen('landing');
+    setLanguage(null);
+    setSessionMode('practice');
   };
 
   const handleSessionEnd = ({ report, transcript, sessionId: sid, language: lang, questionsAnswered, endedAt }) => {
@@ -119,7 +127,9 @@ function App() {
       <PitchRecorder
         language={language}
         sessionId={sessionId}
+        mode={sessionMode}
         onSessionEnd={handleSessionEnd}
+        onReset={handleReset}
       />
     );
   }

@@ -35,6 +35,7 @@ export function useVoiceSession({ onEvent } = {}) {
   const [status, setStatus] = useState('idle'); // idle | connecting | active | error
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isStalled, setIsStalled] = useState(false);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [transcript, setTranscript] = useState([]); // { role, text, timestamp }[]
   const [reportData, setReportData] = useState(null); // { data, transcript } from backend
 
@@ -51,6 +52,8 @@ export function useVoiceSession({ onEvent } = {}) {
   const speakingTimerRef = useRef(null);
   const userSpeechTimeoutRef = useRef(null);
   const stallTimerRef = useRef(null);
+  const analyserRef = useRef(null);
+  const micPollFrameRef = useRef(null);
   const sessionStartRef = useRef(Date.now());
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -143,6 +146,23 @@ export function useVoiceSession({ onEvent } = {}) {
     const source = ctx.createMediaStreamSource(stream);
     sourceRef.current = source;
 
+    // Analyser for user speaking detection
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    analyserRef.current = analyser;
+    source.connect(analyser);
+
+    // Poll mic level with requestAnimationFrame
+    const timeDomainData = new Uint8Array(analyser.fftSize);
+    const pollMicLevel = () => {
+      if (!analyserRef.current) return;
+      analyserRef.current.getByteTimeDomainData(timeDomainData);
+      const avg = timeDomainData.reduce((sum, v) => sum + Math.abs(v - 128), 0) / timeDomainData.length;
+      setIsUserSpeaking(avg > 4);
+      micPollFrameRef.current = requestAnimationFrame(pollMicLevel);
+    };
+    micPollFrameRef.current = requestAnimationFrame(pollMicLevel);
+
     const processor = ctx.createScriptProcessor(4096, 1, 1);
     processorRef.current = processor;
 
@@ -198,10 +218,11 @@ export function useVoiceSession({ onEvent } = {}) {
   // ---------------------------------------------------------------------------
 
   const connect = useCallback(
-    async ({ language = 'en' } = {}) => {
+    async ({ language = 'en', mode = 'practice' } = {}) => {
       setStatus('connecting');
       setTranscript([]);
       setIsStalled(false);
+      setIsUserSpeaking(false);
       sessionStartRef.current = Date.now();
       aiBufferRef.current = '';
       userBufferRef.current = '';
@@ -211,7 +232,7 @@ export function useVoiceSession({ onEvent } = {}) {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'init', language }));
+        ws.send(JSON.stringify({ type: 'init', language, mode }));
       };
 
       ws.onmessage = async (event) => {
@@ -285,7 +306,10 @@ export function useVoiceSession({ onEvent } = {}) {
         setStatus('idle');
         setIsAISpeaking(false);
         setIsStalled(false);
+        setIsUserSpeaking(false);
         if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+        if (micPollFrameRef.current) { cancelAnimationFrame(micPollFrameRef.current); micPollFrameRef.current = null; }
+        analyserRef.current = null;
       };
 
       ws.onerror = () => {
@@ -299,6 +323,8 @@ export function useVoiceSession({ onEvent } = {}) {
     if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
     if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
     if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+    if (micPollFrameRef.current) { cancelAnimationFrame(micPollFrameRef.current); micPollFrameRef.current = null; }
+    analyserRef.current = null;
 
     try { wsRef.current?.send(JSON.stringify({ type: 'end_session' })); } catch (_) {}
     wsRef.current?.close();
@@ -320,6 +346,7 @@ export function useVoiceSession({ onEvent } = {}) {
     setStatus('idle');
     setIsAISpeaking(false);
     setIsStalled(false);
+    setIsUserSpeaking(false);
   }, []);
 
   const injectText = useCallback((text) => {
@@ -342,6 +369,8 @@ export function useVoiceSession({ onEvent } = {}) {
     if (speakingTimerRef.current) clearTimeout(speakingTimerRef.current);
     if (userSpeechTimeoutRef.current) clearTimeout(userSpeechTimeoutRef.current);
     if (stallTimerRef.current) { clearTimeout(stallTimerRef.current); stallTimerRef.current = null; }
+    if (micPollFrameRef.current) { cancelAnimationFrame(micPollFrameRef.current); micPollFrameRef.current = null; }
+    analyserRef.current = null;
 
     try { wsRef.current?.send(JSON.stringify({ type: 'end_session' })); } catch (_) {}
 
@@ -358,12 +387,20 @@ export function useVoiceSession({ onEvent } = {}) {
     nextPlayTimeRef.current = 0;
     setIsAISpeaking(false);
     setIsStalled(false);
+    setIsUserSpeaking(false);
+  }, []);
+
+  const skipToFeedback = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'skip_qa' }));
+    }
   }, []);
 
   return {
     status,
     isAISpeaking,
     isStalled,
+    isUserSpeaking,
     micStream: micStreamRef,
     transcript,
     reportData,
@@ -372,5 +409,6 @@ export function useVoiceSession({ onEvent } = {}) {
     injectText,
     sendScreenFrame,
     requestReport,
+    skipToFeedback,
   };
 }

@@ -183,7 +183,25 @@ export default function FeedbackReport({
             </div>
             <div className="flex flex-col gap-3 shrink-0">
               <button
-                onClick={() => window.print()}
+                onClick={() => {
+                  const style = document.createElement('style');
+                  style.id = '__pp-print-fix';
+                  style.innerHTML = `
+                    @media print {
+                      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                      body { background: #0B0B0F !important; color: #e2e8f0 !important; }
+                      .overflow-y-auto, main { overflow: visible !important; height: auto !important; max-height: none !important; }
+                    }
+                  `;
+                  document.head.appendChild(style);
+                  setTimeout(() => {
+                    window.print();
+                    setTimeout(() => {
+                      const el = document.getElementById('__pp-print-fix');
+                      if (el) el.remove();
+                    }, 1000);
+                  }, 500);
+                }}
                 className="flex items-center justify-center gap-2 h-11 px-6 bg-[#7c5cff] text-white text-sm font-bold rounded-xl hover:bg-[#7c5cff]/90 transition-all shadow-lg shadow-[#7c5cff]/20"
               >
                 <span className="material-symbols-outlined text-sm">download</span>
