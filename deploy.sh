@@ -25,11 +25,8 @@ while IFS= read -r line; do
 done < "$ENV_FILE"
 ENV_FLAGS="${ENV_FLAGS%,}"  # strip trailing comma
 
-echo "Building Docker image: ${IMAGE}"
-docker build -t "${IMAGE}" backend/
-
-echo "Pushing image to Container Registry"
-docker push "${IMAGE}"
+echo "Building and pushing Docker image (linux/amd64): ${IMAGE}"
+docker buildx build --platform linux/amd64 -t "${IMAGE}" --push backend/
 
 echo "Deploying to Cloud Run"
 gcloud run deploy "${SERVICE_NAME}" \
