@@ -1,9 +1,7 @@
 import { useRef, useState, useCallback } from 'react';
 
-const WS_URL =
-  process.env.NODE_ENV === 'production'
-    ? `wss://${window.location.host}/ws/voice`
-    : 'ws://localhost:3001/ws/voice';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+const WS_URL = BACKEND_URL.replace(/^http/, 'ws') + '/ws/voice';
 
 // Unified filter: returns true if text should NOT appear in the visible transcript
 const shouldFilter = (text) => {
