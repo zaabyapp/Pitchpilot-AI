@@ -1,5 +1,7 @@
 import React from 'react';
 import Header from './Header';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 const TRANSLATIONS = {
   en: {
@@ -183,24 +185,18 @@ export default function FeedbackReport({
             </div>
             <div className="flex flex-col gap-3 shrink-0">
               <button
-                onClick={() => {
-                  const style = document.createElement('style');
-                  style.id = '__pp-print-fix';
-                  style.innerHTML = `
-                    @media print {
-                      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                      body { background: #0B0B0F !important; color: #e2e8f0 !important; }
-                      .overflow-y-auto, main { overflow: visible !important; height: auto !important; max-height: none !important; }
-                    }
-                  `;
-                  document.head.appendChild(style);
-                  setTimeout(() => {
-                    window.print();
-                    setTimeout(() => {
-                      const el = document.getElementById('__pp-print-fix');
-                      if (el) el.remove();
-                    }, 1000);
-                  }, 500);
+                onClick={async () => {
+                  const el = document.getElementById('pdf-export-content');
+                  if (!el) return;
+                  el.style.display = 'block';
+                  const canvas = await html2canvas(el, { scale: 2, useCORS: true });
+                  el.style.display = 'none';
+                  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                  const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: 'a4' });
+                  const pdfWidth = pdf.internal.pageSize.getWidth();
+                  const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                  pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                  pdf.save(`pitchpilot-report-${sessionId}.pdf`);
                 }}
                 className="flex items-center justify-center gap-2 h-11 px-6 bg-[#7c5cff] text-white text-sm font-bold rounded-xl hover:bg-[#7c5cff]/90 transition-all shadow-lg shadow-[#7c5cff]/20"
               >
@@ -405,6 +401,136 @@ export default function FeedbackReport({
           </div>
         </div>
       </main>
+
+      {/* Hidden PDF export div — white document, never visible to user */}
+      <div
+        id="pdf-export-content"
+        style={{
+          display: 'none',
+          position: 'fixed',
+          left: '-9999px',
+          top: 0,
+          width: '800px',
+          background: 'white',
+          color: 'black',
+          padding: '40px',
+          fontFamily: 'sans-serif',
+          fontSize: '14px',
+          lineHeight: '1.6',
+        }}
+      >
+        <div style={{ borderBottom: '2px solid #7c5cff', paddingBottom: '16px', marginBottom: '24px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '800', color: '#1a1a2e', margin: '0 0 4px 0' }}>PitchPilot AI — Pitch Performance Report</h1>
+          <p style={{ color: '#555', margin: 0, fontSize: '12px' }}>Session {sessionId} · AI-generated analysis</p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', background: '#f5f3ff', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+          <div style={{ textAlign: 'center', minWidth: '80px' }}>
+            <div style={{ fontSize: '48px', fontWeight: '900', color: '#7c5cff' }}>{score ?? '—'}</div>
+            <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em' }}>/ 100</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#7c5cff', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{t.level}: {t.levels[level] ?? level}</div>
+            <p style={{ color: '#333', margin: 0 }}>{summary}</p>
+          </div>
+        </div>
+
+        {whatWentWell?.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#1a1a2e', marginBottom: '12px', borderLeft: '4px solid #10b981', paddingLeft: '10px' }}>{t.whatWentWell}</h2>
+            {whatWentWell.map((item, i) => (
+              <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ color: '#10b981', fontWeight: '700', flexShrink: 0 }}>✓</span>
+                <p style={{ color: '#333', margin: 0 }}>{item}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {deliveryMetrics && (
+          <div style={{ marginBottom: '24px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#1a1a2e', marginBottom: '12px', borderLeft: '4px solid #7c5cff', paddingLeft: '10px' }}>{t.deliveryMetrics}</h2>
+            {Object.entries(deliveryMetrics).map(([key, value]) => (
+              <div key={key} style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '600', marginBottom: '4px' }}>
+                  <span style={{ color: '#555', textTransform: 'uppercase' }}>{t.metricLabels[key] ?? key}</span>
+                  <span style={{ color: '#333' }}>{value}%</span>
+                </div>
+                <div style={{ height: '6px', background: '#e5e7eb', borderRadius: '9999px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${value}%`, background: '#7c5cff', borderRadius: '9999px' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {voiceAnalysis && (
+          <div style={{ marginBottom: '24px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#1a1a2e', marginBottom: '12px', borderLeft: '4px solid #7c5cff', paddingLeft: '10px' }}>{t.voiceAnalysis}</h2>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', minWidth: '140px' }}>
+                <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>{t.wpm}</div>
+                <div style={{ fontSize: '20px', fontWeight: '800', color: '#333' }}>{voiceAnalysis.wpm}</div>
+              </div>
+              {sentimentPositive != null && (
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', flex: 1 }}>
+                  <div style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', marginBottom: '8px' }}>{t.sentimentBalance}</div>
+                  <div style={{ fontSize: '13px', color: '#333' }}>
+                    <span style={{ color: '#10b981', fontWeight: '700' }}>{t.positive}: {sentimentPositive}%</span> &nbsp;·&nbsp;
+                    <span style={{ color: '#888' }}>{t.neutral}: {sentimentNeutral}%</span> &nbsp;·&nbsp;
+                    <span style={{ color: '#f97316' }}>{t.negative}: {sentimentNegative}%</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {actionItems && (
+          <div>
+            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#1a1a2e', marginBottom: '16px', textAlign: 'center' }}>{t.actionItems}</h2>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              {actionItems.communication?.length > 0 && (
+                <div style={{ flex: 1, minWidth: '200px', background: '#f5f3ff', borderRadius: '8px', padding: '16px', borderTop: '4px solid #7c5cff' }}>
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#7c5cff', marginBottom: '10px' }}>{t.communicationFocus}</h3>
+                  {actionItems.communication.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                      <span style={{ color: '#7c5cff', flexShrink: 0 }}>·</span>
+                      <p style={{ color: '#333', margin: 0, fontSize: '13px' }}>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {actionItems.business?.length > 0 && (
+                <div style={{ flex: 1, minWidth: '200px', background: '#f0fdf4', borderRadius: '8px', padding: '16px', borderTop: '4px solid #10b981' }}>
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#10b981', marginBottom: '10px' }}>{t.businessFocus}</h3>
+                  {actionItems.business.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                      <span style={{ color: '#10b981', flexShrink: 0 }}>·</span>
+                      <p style={{ color: '#333', margin: 0, fontSize: '13px' }}>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {actionItems.audience?.length > 0 && (
+                <div style={{ flex: 1, minWidth: '200px', background: '#faf5ff', borderRadius: '8px', padding: '16px', borderTop: '4px solid #a78bfa' }}>
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#a78bfa', marginBottom: '10px' }}>{t.audienceImpact}</h3>
+                  {actionItems.audience.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                      <span style={{ color: '#a78bfa', flexShrink: 0 }}>·</span>
+                      <p style={{ color: '#333', margin: 0, fontSize: '13px' }}>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: '32px', paddingTop: '16px', borderTop: '1px solid #e5e7eb', textAlign: 'center', color: '#aaa', fontSize: '11px' }}>
+          PitchPilot AI · {t.aiEngine} · {t.session} {sessionId}
+        </div>
+      </div>
     </div>
   );
 }

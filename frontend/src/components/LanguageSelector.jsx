@@ -45,7 +45,7 @@ export default function LanguageSelector({ onSelectLanguage, onNavInstructions =
 
             {step === 'language' && (
               <div className="relative space-y-8">
-                <p className="text-slate-300 text-center leading-relaxed">
+                <p className="text-slate-300 text-center leading-relaxed min-h-[4.5rem] flex items-center justify-center">
                   {isEs
                     ? 'Domina tu presentación con retroalimentación de IA en tiempo real. Practica tu pitch técnico y prepárate para tu próxima gran demo.'
                     : 'Master your delivery with real-time AI feedback. Practice your technical pitch, refine your tone, and get ready for your next big demo.'}
@@ -55,12 +55,12 @@ export default function LanguageSelector({ onSelectLanguage, onNavInstructions =
                   <label className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center justify-center gap-2">
                     {isEs ? 'Selecciona idioma' : 'Select Language'}
                   </label>
-                  <div className="flex h-11 w-full items-center justify-center rounded-lg bg-[#0B0B0F] p-1 border border-[#2A2A35]">
-                    <label className={`flex cursor-pointer h-full grow items-center justify-center rounded-md px-4 text-sm font-semibold transition-all ${language === 'English' ? 'bg-[#7c5cff] text-white' : 'text-slate-400'}`}>
+                  <div className="flex h-11 w-full items-center justify-center gap-1 rounded-lg bg-[#0B0B0F] p-1 border border-[#2A2A35]">
+                    <label className={`flex cursor-pointer h-full w-1/2 min-w-[160px] items-center justify-center rounded-md px-4 text-sm font-semibold transition-all ${language === 'English' ? 'bg-[#7c5cff] text-white' : 'text-slate-400'}`}>
                       <span>English</span>
                       <input className="invisible w-0" name="language-toggle" type="radio" value="English" checked={language === 'English'} onChange={() => setLanguage('English')} />
                     </label>
-                    <label className={`flex cursor-pointer h-full grow items-center justify-center rounded-md px-4 text-sm font-semibold transition-all ${language === 'Español' ? 'bg-[#7c5cff] text-white' : 'text-slate-400'}`}>
+                    <label className={`flex cursor-pointer h-full w-1/2 min-w-[160px] items-center justify-center rounded-md px-4 text-sm font-semibold transition-all ${language === 'Español' ? 'bg-[#7c5cff] text-white' : 'text-slate-400'}`}>
                       <span>Español</span>
                       <input className="invisible w-0" name="language-toggle" type="radio" value="Español" checked={language === 'Español'} onChange={() => setLanguage('Español')} />
                     </label>
@@ -100,11 +100,11 @@ export default function LanguageSelector({ onSelectLanguage, onNavInstructions =
                     <div className="size-10 rounded-lg bg-[#7c5cff]/10 border border-[#7c5cff]/30 flex items-center justify-center shrink-0 group-hover:bg-[#7c5cff]/20 transition-colors">
                       <span className="material-symbols-outlined text-[#7c5cff] text-xl">mic</span>
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="font-bold text-white text-sm mb-1">
                         {isEs ? 'Practicar mi pitch' : 'Practice my pitch'}
                       </p>
-                      <p className="text-slate-500 text-xs leading-relaxed">
+                      <p className="text-slate-500 text-xs leading-relaxed min-h-[2.5rem]">
                         {isEs
                           ? 'Simulación completa con temporizador, preguntas difíciles y reporte de rendimiento.'
                           : 'Full simulation with timer, tough Q&A, and a performance report.'}
@@ -119,11 +119,11 @@ export default function LanguageSelector({ onSelectLanguage, onNavInstructions =
                     <div className="size-10 rounded-lg bg-emerald-400/10 border border-emerald-400/30 flex items-center justify-center shrink-0 group-hover:bg-emerald-400/20 transition-colors">
                       <span className="material-symbols-outlined text-emerald-400 text-xl">psychology</span>
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="font-bold text-white text-sm mb-1">
                         {isEs ? 'Hablar con mi coach' : 'Chat with my coach'}
                       </p>
-                      <p className="text-slate-500 text-xs leading-relaxed">
+                      <p className="text-slate-500 text-xs leading-relaxed min-h-[2.5rem]">
                         {isEs
                           ? 'Conversación libre de coaching. Haz preguntas, trabaja en tu proyecto, comparte tu pantalla.'
                           : 'Free-form coaching conversation. Ask questions, work through your project, share your screen.'}
