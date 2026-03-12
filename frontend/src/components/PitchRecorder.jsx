@@ -80,7 +80,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     }
   }, [onSessionEnd, sessionId, language]);
 
-  const { status, isAISpeaking, isStalled, micStream, transcript, connect, disconnect, injectText, sendScreenFrame, requestReport } =
+  const { status, isAISpeaking, micStream, transcript, connect, disconnect, injectText, sendScreenFrame, requestReport } =
     useVoiceSession({ onEvent: handleEvent });
 
   const disconnectRef = useRef(disconnect);
@@ -140,7 +140,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     const isFormalSim = simPhase === PHASE.PITCH_ACTIVE || simPhase === PHASE.QA_WAITING ||
                         simPhase === PHASE.QA_ACTIVE;
     if (isFormalSim) {
-      startPeriodicCapture(15000, (base64) => sendScreenFrame(base64));
+      startPeriodicCapture(10000, (base64) => sendScreenFrame(base64));
     } else {
       stopPeriodicCapture();
     }
@@ -257,7 +257,17 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
     if (isScreenSharing) {
       stopScreenShare();
     } else {
-      await startScreenShare();
+      const started = await startScreenShare();
+      if (started) {
+        // Capture and send first frame immediately
+        setTimeout(() => {
+          const frame = captureScreenFrame();
+          if (frame) {
+            console.log('[ScreenShare] Sending immediate frame on share start');
+            sendScreenFrame(frame);
+          }
+        }, 500); // brief delay for video element to be ready
+      }
     }
   };
 
@@ -378,16 +388,6 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
           </div>
         )}
 
-        {/* Stall indicator */}
-        {isStalled && simPhase !== PHASE.PITCH_ACTIVE && (
-          <div className="flex items-center gap-2 border border-amber-400/30 bg-amber-400/10 rounded-xl px-5 py-2 text-amber-400 animate-pulse">
-            <span className="material-symbols-outlined text-base">hourglass_top</span>
-            <span className="text-xs font-bold uppercase tracking-wider">
-              {language === 'es' ? 'Pensando…' : 'Still thinking…'}
-            </span>
-          </div>
-        )}
-
       </header>
 
       {/* Main — video + AI panel */}
@@ -424,22 +424,6 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-400" />
               </span>
               <span className="text-[10px] font-bold uppercase text-orange-400">Pitching</span>
-            </div>
-          )}
-          {/* Screen share PiP preview */}
-          {isScreenSharing && (
-            <div className="absolute bottom-3 right-3 w-36 rounded-lg overflow-hidden border border-emerald-400/50 shadow-lg bg-black">
-              <video
-                ref={screenPreviewRef}
-                autoPlay
-                muted
-                playsInline
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-0.5 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[10px] text-emerald-400">screen_share</span>
-                <span className="text-[9px] font-bold uppercase text-emerald-400">Screen</span>
-              </div>
             </div>
           )}
         </div>
@@ -662,6 +646,28 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
           Voice Mode • Gemini 2.0 Flash Live • Charon
         </p>
       </div>
+
+      {/* Screen share fixed PiP overlay */}
+      {isScreenSharing && (
+        <div className="fixed bottom-6 right-6 w-60 rounded-xl overflow-hidden border border-emerald-400/50 shadow-2xl bg-black z-50">
+          <video
+            ref={screenPreviewRef}
+            autoPlay
+            muted
+            playsInline
+            className="w-full block"
+          />
+          <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-lg">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+            </span>
+            <span className="text-[9px] font-bold uppercase text-emerald-400 tracking-wider">
+              {language === 'es' ? 'Compartiendo pantalla' : 'Sharing screen'}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

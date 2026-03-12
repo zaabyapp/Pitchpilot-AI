@@ -12,8 +12,12 @@ You are a pitch simulation AI for PitchPilot AI. You play two sequential roles: 
 === RESPONSE SPEED RULE ===
 After the user finishes speaking, respond within 1 second. The only exception is during PHASE 4 (pitch listening) where you stay completely silent. If the user keeps talking after you started, stop immediately and listen until they finish, then respond right away.
 
-=== SCREEN SHARE ===
-When you receive image frames during the session, these are screenshots of what the user is presenting. Read and interpret the content carefully. If asked what you see, describe it accurately — reference specific text, UI elements, or visual content you can actually see in the image. During coaching, note any meaningful alignment or mismatch between what was said and what was shown. Do not narrate the screen constantly — only mention it when it adds real value.
+=== SCREEN SHARE RULE ===
+You will periodically receive screenshot images of the user's screen during the session.
+When you receive an image, read ALL visible text and UI elements carefully.
+If the user asks what you see, describe exactly what is in the image — text, interface, content, everything visible.
+Do not say you cannot see the screen. You are receiving actual screenshot images.
+Use this content as pitch context throughout the session.
 
 === PHASE 1 — INTRODUCTION + FIRST QUESTION ===
 When you receive <<SYSTEM_EVENT>> session_started, deliver your introduction AND first question in one single continuous message.
@@ -98,8 +102,12 @@ Eres un AI de simulación de pitch para PitchPilot AI. Tienes dos roles secuenci
 === REGLA DE VELOCIDAD DE RESPUESTA ===
 Después de que el usuario termine de hablar, responde dentro de 1 segundo. La única excepción es la FASE 4 (escucha del pitch) donde debes permanecer en silencio. Si el usuario sigue hablando después de que empezaste, detente inmediatamente y escucha hasta que termine, luego responde de inmediato.
 
-=== PANTALLA COMPARTIDA ===
-Cuando recibas frames de imagen durante la sesión, son capturas de pantalla de lo que el usuario está presentando. Lee e interpreta el contenido cuidadosamente. Si te preguntan qué ves, descríbelo con precisión — haz referencia a texto específico, elementos de la interfaz o contenido visual que puedas ver en la imagen. Durante el coaching, señala alineaciones o discrepancias significativas entre lo que se dijo y lo que se mostró. No narres la pantalla constantemente — menciónala solo cuando aporte valor real.
+=== REGLA DE PANTALLA COMPARTIDA ===
+Recibirás periódicamente imágenes de la pantalla del usuario durante la sesión.
+Cuando recibas una imagen, lee CUIDADOSAMENTE todo el texto y elementos de interfaz visibles.
+Si el usuario pregunta qué ves, describe exactamente lo que hay en la imagen — texto, interfaz, contenido, todo lo visible.
+No digas que no puedes ver la pantalla. Estás recibiendo capturas de pantalla reales.
+Usa este contenido como contexto del pitch durante toda la sesión.
 
 === FASE 1 — INTRODUCCIÓN + PRIMERA PREGUNTA ===
 Cuando recibas <<SYSTEM_EVENT>> session_started, entrega tu introducción Y primera pregunta en un único mensaje continuo.
@@ -609,21 +617,33 @@ export function setupVoiceWebSocket(server: http.Server): void {
             })
           );
         } else if (msg.type === 'screen_frame' && isInitialized && geminiWs?.readyState === WebSocket.OPEN) {
-          // Store screen frame for snapshot and forward to Gemini
+          // Strip any accidental data URL prefix — send only raw base64
+          const rawBase64 = (msg.data ?? '').replace(/^data:image\/[a-z]+;base64,/, '');
+
+          // Store screen frame for snapshot
           if (!qaComplete) {
-            screenFrames.push(msg.data!);
+            screenFrames.push(rawBase64);
           }
-          console.log(`[VoiceWS] Screen frame received, size: ${msg.data?.length ?? 0} bytes, forwarding to Gemini`);
-          geminiWs.send(
-            JSON.stringify({
-              realtimeInput: {
-                mediaChunks: [{
-                  mimeType: 'image/jpeg',
-                  data: msg.data,
-                }],
-              },
-            })
-          );
+          console.log(`[ScreenShare] Frame received: ${rawBase64.length} bytes`);
+
+          // Forward image to Gemini
+          geminiWs.send(JSON.stringify({
+            realtimeInput: {
+              mediaChunks: [{
+                mimeType: 'image/jpeg',
+                data: rawBase64,
+              }],
+            },
+          }));
+
+          // Immediately follow with a text prompt so Gemini reads the frame
+          geminiWs.send(JSON.stringify({
+            realtimeInput: {
+              text: 'The user is sharing their screen. The image above shows what is currently visible on their screen. Use this visual context to understand what they are presenting.',
+            },
+          }));
+
+          console.log('[ScreenShare] Frame forwarded to Gemini successfully');
         } else if (msg.type === 'inject_text' && isInitialized && geminiWs?.readyState === WebSocket.OPEN) {
           // Track when pitch_timer_ended is injected
           if (msg.text?.includes('pitch_timer_ended')) {

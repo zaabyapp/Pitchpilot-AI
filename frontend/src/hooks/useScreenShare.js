@@ -34,18 +34,20 @@ export function useScreenShare() {
     if (!video || video.videoWidth === 0) return null;
 
     try {
+      // Use native video resolution — do not downscale so text remains readable
       const canvas = document.createElement('canvas');
-      canvas.width = 1280;
-      canvas.height = 720;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, 1280, 720);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
       const base64 = dataUrl.split(',')[1] || null;
       if (base64) {
-        console.log(`[ScreenShare] Frame captured, size: ${base64.length} bytes`);
+        console.log(`[ScreenShare] Frame captured — ${canvas.width}x${canvas.height}, size: ${base64.length} bytes, preview: ${base64.slice(0, 100)}`);
       }
       return base64;
-    } catch (_) {
+    } catch (err) {
+      console.warn('[ScreenShare] captureFrame error:', err.message);
       return null;
     }
   }, []);
