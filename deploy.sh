@@ -20,6 +20,7 @@ while IFS= read -r line; do
   key="${line%%=*}"
   value="${line#*=}"
   [[ -z "$value" ]] && continue
+  [[ "$key" == "PORT" ]] && continue  # Cloud Run sets PORT automatically
   ENV_FLAGS="${ENV_FLAGS}${key}=${value},"
 done < "$ENV_FILE"
 ENV_FLAGS="${ENV_FLAGS%,}"  # strip trailing comma
