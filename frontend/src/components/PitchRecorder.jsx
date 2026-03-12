@@ -43,7 +43,15 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
   questionsAnsweredRef.current = questionsAnswered;
 
   // Screen share
-  const { isScreenSharing, startScreenShare, stopScreenShare, captureFrame: captureScreenFrame, startPeriodicCapture, stopPeriodicCapture } = useScreenShare();
+  const { isScreenSharing, screenStream, startScreenShare, stopScreenShare, captureFrame: captureScreenFrame, startPeriodicCapture, stopPeriodicCapture } = useScreenShare();
+  const screenPreviewRef = useRef(null);
+
+  // Bind screen stream to preview video element
+  useEffect(() => {
+    if (screenPreviewRef.current) {
+      screenPreviewRef.current.srcObject = screenStream;
+    }
+  }, [screenStream]);
 
   // ---------------------------------------------------------------------------
   // Event handler from the voice session
@@ -418,11 +426,20 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd }) {
               <span className="text-[10px] font-bold uppercase text-orange-400">Pitching</span>
             </div>
           )}
-          {/* Screen share indicator */}
+          {/* Screen share PiP preview */}
           {isScreenSharing && (
-            <div className="absolute bottom-4 right-4 bg-emerald-500/20 border border-emerald-400/40 px-3 py-1 rounded-lg flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm text-emerald-400">screen_share</span>
-              <span className="text-[10px] font-bold uppercase text-emerald-400">Sharing</span>
+            <div className="absolute bottom-3 right-3 w-36 rounded-lg overflow-hidden border border-emerald-400/50 shadow-lg bg-black">
+              <video
+                ref={screenPreviewRef}
+                autoPlay
+                muted
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-0.5 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[10px] text-emerald-400">screen_share</span>
+                <span className="text-[9px] font-bold uppercase text-emerald-400">Screen</span>
+              </div>
             </div>
           )}
         </div>

@@ -23,6 +23,7 @@ import { useRef, useState, useCallback } from 'react';
  */
 export function useScreenShare() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [screenStream, setScreenStream] = useState(null);
   const streamRef = useRef(null);
   const videoElRef = useRef(null);
   const intervalRef = useRef(null);
@@ -34,12 +35,16 @@ export function useScreenShare() {
 
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 360;
+      canvas.width = 1280;
+      canvas.height = 720;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, 640, 360);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-      return dataUrl.split(',')[1] || null;
+      ctx.drawImage(video, 0, 0, 1280, 720);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const base64 = dataUrl.split(',')[1] || null;
+      if (base64) {
+        console.log(`[ScreenShare] Frame captured, size: ${base64.length} bytes`);
+      }
+      return base64;
     } catch (_) {
       return null;
     }
@@ -61,6 +66,7 @@ export function useScreenShare() {
       videoElRef.current = null;
     }
     onFrameRef.current = null;
+    setScreenStream(null);
     setIsScreenSharing(false);
   }, [stopPeriodicCapture]);
 
@@ -80,7 +86,9 @@ export function useScreenShare() {
       await video.play();
       videoElRef.current = video;
 
+      setScreenStream(stream);
       setIsScreenSharing(true);
+      console.log('[ScreenShare] Screen share started');
 
       // Handle user stopping share via browser UI
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
@@ -115,6 +123,7 @@ export function useScreenShare() {
 
   return {
     isScreenSharing,
+    screenStream,
     startScreenShare,
     stopScreenShare,
     captureFrame,
