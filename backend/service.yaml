@@ -1,0 +1,32 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: pitchpilot-backend
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+    spec:
+      containers:
+        - image: gcr.io/zaaby-483422/pitchpilot-backend
+          ports:
+            - containerPort: 8080
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "8080"
+            - name: GEMINI_API_KEY
+              value: ""        # fill in or use Secret Manager
+            - name: FRONTEND_URL
+              value: ""        # fill in with deployed frontend URL
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
