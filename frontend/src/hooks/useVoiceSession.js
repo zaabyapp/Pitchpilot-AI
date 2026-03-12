@@ -275,7 +275,7 @@ export function useVoiceSession({ onEvent } = {}) {
                 userBufferRef.current = '';
                 // Start stall timer after user finishes
                 startStallTimer();
-              }, 500);
+              }, 200);
             }
           } else if (msg.type === 'phase_event') {
             onEventRef.current?.({ type: 'phase_event', phase: msg.phase, count: msg.count });
@@ -360,6 +360,10 @@ export function useVoiceSession({ onEvent } = {}) {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'screen_frame', data: base64Data }));
       console.log('[timing] screen_frame_sent', Date.now());
+      wsRef.current.send(JSON.stringify({
+        type: 'screen_context',
+        text: 'This is a screenshot of what the user is currently showing on their screen. Please read ALL visible text carefully and use it as context for this conversation.',
+      }));
     }
   }, []);
 

@@ -40,7 +40,7 @@ export function useScreenShare() {
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
       const base64 = dataUrl.split(',')[1] || null;
       if (base64) {
         console.log(`[ScreenShare] Frame captured — ${canvas.width}x${canvas.height}, size: ${base64.length} bytes, preview: ${base64.slice(0, 100)}`);
@@ -75,7 +75,7 @@ export function useScreenShare() {
   const startScreenShare = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: 1280, height: 720 },
+        video: true,
         audio: false,
       });
       streamRef.current = stream;

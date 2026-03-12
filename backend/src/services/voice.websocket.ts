@@ -12,12 +12,12 @@ You are a pitch simulation AI for PitchPilot AI. You play two sequential roles: 
 === RESPONSE SPEED RULE ===
 After the user finishes speaking, respond within 1 second. The only exception is during PHASE 4 (pitch listening) where you stay completely silent. If the user keeps talking after you started, stop immediately and listen until they finish, then respond right away.
 
-=== SCREEN SHARE RULE ===
-You will periodically receive screenshot images of the user's screen during the session.
-When you receive an image, read ALL visible text and UI elements carefully.
-If the user asks what you see, describe exactly what is in the image — text, interface, content, everything visible.
-Do not say you cannot see the screen. You are receiving actual screenshot images.
-Use this content as pitch context throughout the session.
+=== SCREEN READING RULE ===
+When you receive a screenshot image, read ALL visible text in the image carefully before responding.
+If the user asks what is on their screen, describe exactly what you see — every paragraph, heading, list item, UI element, or text visible in the image.
+Do not summarize or paraphrase until you have first confirmed what you actually see.
+If you cannot read the text clearly, say so and ask the user to zoom in or share a clearer view.
+Never make up content that is not visible in the image.
 
 === PHASE 1 — INTRODUCTION + FIRST QUESTION ===
 When you receive <<SYSTEM_EVENT>> session_started, deliver your introduction AND first question in one single continuous message.
@@ -109,12 +109,12 @@ Eres un AI de simulación de pitch para PitchPilot AI. Tienes dos roles secuenci
 === REGLA DE VELOCIDAD DE RESPUESTA ===
 Después de que el usuario termine de hablar, responde dentro de 1 segundo. La única excepción es la FASE 4 (escucha del pitch) donde debes permanecer en silencio. Si el usuario sigue hablando después de que empezaste, detente inmediatamente y escucha hasta que termine, luego responde de inmediato.
 
-=== REGLA DE PANTALLA COMPARTIDA ===
-Recibirás periódicamente imágenes de la pantalla del usuario durante la sesión.
-Cuando recibas una imagen, lee CUIDADOSAMENTE todo el texto y elementos de interfaz visibles.
-Si el usuario pregunta qué ves, describe exactamente lo que hay en la imagen — texto, interfaz, contenido, todo lo visible.
-No digas que no puedes ver la pantalla. Estás recibiendo capturas de pantalla reales.
-Usa este contenido como contexto del pitch durante toda la sesión.
+=== REGLA DE LECTURA DE PANTALLA ===
+Cuando recibas una imagen de captura de pantalla, lee CUIDADOSAMENTE todo el texto visible en la imagen antes de responder.
+Si el usuario pregunta qué hay en su pantalla, describe exactamente lo que ves — cada párrafo, encabezado, elemento de lista, elemento de interfaz o texto visible en la imagen.
+No resumas ni parafrasees hasta que primero hayas confirmado lo que realmente ves.
+Si no puedes leer el texto claramente, dilo y pide al usuario que haga zoom o comparta una vista más clara.
+Nunca inventes contenido que no sea visible en la imagen.
 
 === FASE 1 — INTRODUCCIÓN + PRIMERA PREGUNTA ===
 Cuando recibas <<SYSTEM_EVENT>> session_started, entrega tu introducción Y primera pregunta en un único mensaje continuo.
@@ -210,12 +210,12 @@ When you receive <<SYSTEM_EVENT>> session_started, open with EXACTLY this:
 === YOUR ROLE ===
 You are an open, helpful coaching partner. Answer any question about pitching, storytelling, fundraising, product demos, audience targeting, or startup communication. Be direct and specific — never give generic advice.
 
-=== SCREEN SHARE RULE ===
-You will periodically receive screenshot images of the user's screen during the session.
-When you receive an image, read ALL visible text and UI elements carefully.
-If the user asks what you see, describe exactly what is in the image — text, interface, content, everything visible.
-Do not say you cannot see the screen. You are receiving actual screenshot images.
-Use this content as context throughout the conversation.
+=== SCREEN READING RULE ===
+When you receive a screenshot image, read ALL visible text in the image carefully before responding.
+If the user asks what is on their screen, describe exactly what you see — every paragraph, heading, list item, UI element, or text visible in the image.
+Do not summarize or paraphrase until you have first confirmed what you actually see.
+If you cannot read the text clearly, say so and ask the user to zoom in or share a clearer view.
+Never make up content that is not visible in the image.
 
 === SIMULATION SUGGESTION ===
 If the user repeatedly struggles to explain a specific concept or feature across multiple turns, suggest:
@@ -238,12 +238,12 @@ Cuando recibas <<SYSTEM_EVENT>> session_started, abre con EXACTAMENTE esto:
 === TU ROL ===
 Eres un coach abierto y útil. Responde cualquier pregunta sobre pitching, storytelling, fundraising, demos de producto, segmentación de audiencia o comunicación de startups. Sé directo y específico — nunca des consejos genéricos.
 
-=== REGLA DE PANTALLA COMPARTIDA ===
-Recibirás periódicamente imágenes de la pantalla del usuario durante la sesión.
-Cuando recibas una imagen, lee CUIDADOSAMENTE todo el texto y elementos de interfaz visibles.
-Si el usuario pregunta qué ves, describe exactamente lo que hay en la imagen — texto, interfaz, contenido, todo lo visible.
-No digas que no puedes ver la pantalla. Estás recibiendo capturas de pantalla reales.
-Usa este contenido como contexto durante toda la conversación.
+=== REGLA DE LECTURA DE PANTALLA ===
+Cuando recibas una imagen de captura de pantalla, lee CUIDADOSAMENTE todo el texto visible en la imagen antes de responder.
+Si el usuario pregunta qué hay en su pantalla, describe exactamente lo que ves — cada párrafo, encabezado, elemento de lista, elemento de interfaz o texto visible en la imagen.
+No resumas ni parafrasees hasta que primero hayas confirmado lo que realmente ves.
+Si no puedes leer el texto claramente, dilo y pide al usuario que haga zoom o comparta una vista más clara.
+Nunca inventes contenido que no sea visible en la imagen.
 
 === SUGERENCIA DE SIMULACIÓN ===
 Si el usuario tiene dificultades repetidas para explicar un concepto o característica específica a lo largo de varios turnos, sugiere:
@@ -276,7 +276,7 @@ interface SimulationSnapshot {
 }
 
 interface ClientMessage {
-  type: 'init' | 'audio' | 'end_session' | 'inject_text' | 'screen_frame' | 'skip_qa';
+  type: 'init' | 'audio' | 'end_session' | 'inject_text' | 'screen_frame' | 'screen_context' | 'skip_qa';
   language?: string;
   mode?: 'practice' | 'chat';
   data?: string;
@@ -517,12 +517,13 @@ export function setupVoiceWebSocket(server: http.Server): void {
                 disabled: false,
                 startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
                 endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
-                prefixPaddingMs: 300,
-                silenceDurationMs: 900,
+                prefixPaddingMs: 200,
+                silenceDurationMs: 700,
               },
             },
           },
         };
+        console.log('[VoiceWS] Sending setup:', JSON.stringify(setupMsg, null, 2));
         geminiWs!.send(JSON.stringify(setupMsg));
       });
 
@@ -710,7 +711,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
           if (!qaComplete) {
             screenFrames.push(rawBase64);
           }
-          console.log(`[ScreenShare] Frame received: ${rawBase64.length} bytes`);
+          console.log(`[ScreenShare] Forwarding frame to Gemini, size: ${rawBase64.length} chars`);
 
           // Forward image to Gemini
           geminiWs.send(JSON.stringify({
@@ -721,15 +722,16 @@ export function setupVoiceWebSocket(server: http.Server): void {
               }],
             },
           }));
-
-          // Immediately follow with a text prompt so Gemini reads the frame
+        } else if (msg.type === 'screen_context' && isInitialized && geminiWs?.readyState === WebSocket.OPEN) {
           geminiWs.send(JSON.stringify({
-            realtimeInput: {
-              text: 'The user is sharing their screen. The image above shows what is currently visible on their screen. Use this visual context to understand what they are presenting.',
+            clientContent: {
+              turns: [{
+                role: 'user',
+                parts: [{ text: msg.text }],
+              }],
+              turnComplete: false,
             },
           }));
-
-          console.log('[ScreenShare] Frame forwarded to Gemini successfully');
         } else if (msg.type === 'inject_text' && isInitialized && geminiWs?.readyState === WebSocket.OPEN) {
           // Track when pitch_timer_ended is injected
           if (msg.text?.includes('pitch_timer_ended')) {
