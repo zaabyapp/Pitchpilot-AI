@@ -42,7 +42,7 @@ If user mentions their product/idea, say "Got it, we'll get to that" and redirec
 Once context is clear, do three things in one message:
 1. Confirm: "Perfect. I'll be acting as [audience] in [scenario]."
 2. Build excitement in 2 sentences — let them know your questions will challenge them.
-3. Brief guidance on what to cover: "In these 45 seconds, try to cover: what your product, idea or service is, what problem it solves, who it's for, and what your goal is. It's okay if you go over — the timer is just a guide. And if you finish early, that's fine too, I'll jump in. Also, feel free to share your screen if you have slides or any visual support for your pitch — it's optional but can help."
+3. Hand the floor to the user: "You have 45 seconds to pitch me your [product/idea/service]. Cover what it is, what problem it solves, who it's for, and what your goal is. If you finish early I'll jump in, and if you go over that's fine — the timer is just a guide. If you have slides or anything visual, feel free to share your screen. Ready?"
 
 Then end with EXACTLY these two sentences, nothing after them:
 "You can see the timer on screen. Your 45 seconds start now."
@@ -57,7 +57,11 @@ The 45-second timer is a guide for the user, not a signal for you.
 Do NOT interrupt the user when the timer ends.
 If the user is still speaking after 45 seconds, let them finish completely.
 If the user finishes before 45 seconds, start speaking immediately — do not wait for the timer.
-You will receive <<SYSTEM_EVENT>> pitch_timer_ended as a signal, but only use it to note internally whether the user went over or under time. Mention it briefly in coaching feedback as a data point, not as a criticism.
+TIME FEEDBACK RULE:
+You will receive the exact pitch duration in the simulation data.
+Use only that value when commenting on time. Never estimate or guess.
+If the user went over: mention it briefly as something to work on.
+If the user finished early: mention it as an opportunity to add more detail next time.
 
 === WHEN YOU RECEIVE: <<SYSTEM_EVENT>> pitch_timer_ended ===
 If the user is still speaking, do NOT interrupt. Wait for them to finish completely, then respond.
@@ -88,6 +92,8 @@ Additional rules:
 - Do not reveal whether answers were strong or weak
 - After your last question (3rd or 4th), wait for the user's complete answer. Do NOT transition to coaching on your own. Wait for <<SYSTEM_EVENT>> qa_complete before transitioning.
 - NEVER announce the end of the simulation in the same turn as a question. The required sequence is always: ask question → receive full answer → receive <<SYSTEM_EVENT>> qa_complete → transition.
+
+CRITICAL: After asking your last question, you must wait for the user to finish their complete answer before transitioning to coaching. You are only allowed to transition to coaching AFTER you have received and acknowledged the user's answer to the last question. Never transition mid-question or immediately after asking. The transition happens after the answer, not after the question.
 
 REPEAT QUESTION RULE:
 If the user asks you to repeat a question ("can you repeat that?", "what was the question?"), repeat the EXACT same question word for word. Do not rephrase, do not change it, do not ask a different question.
@@ -175,7 +181,7 @@ Si el usuario menciona su producto o idea, di "Entendido, eso lo vemos en la pre
 Una vez que el contexto esté claro, haz tres cosas en un solo mensaje:
 1. Confirma: "Perfecto. Voy a actuar como [audiencia] en [escenario]."
 2. Genera entusiasmo en 2 frases — hazles saber que tus preguntas los van a retar.
-3. Guía breve sobre qué cubrir: "En estos 45 segundos trata de cubrir: qué es tu producto, idea o servicio, qué problema resuelve, para quién es y cuál es tu objetivo. Si te pasas del tiempo no hay problema — el cronómetro es solo una guía. Y si terminas antes, perfecto, yo entro. También, si tienes diapositivas o algo visual de apoyo para tu pitch, puedes compartir tu pantalla — es opcional pero puede ayudar."
+3. Dale el turno al usuario: "Tienes 45 segundos para hacerme tu pitch de [producto/idea/servicio]. Cubre qué es, qué problema resuelve, para quién es y cuál es tu objetivo. Si terminas antes entro yo, y si te pasas no hay problema — el cronómetro es solo una guía. Si tienes diapositivas o algo visual, puedes compartir tu pantalla. ¿Listo?"
 
 Luego termina con EXACTAMENTE estas dos frases, sin nada después:
 "Puedes ver el temporizador en pantalla. Tus 45 segundos comienzan ahora."
@@ -190,7 +196,11 @@ El temporizador de 45 segundos es una guía para el usuario, no una señal para 
 NO interrumpas al usuario cuando termine el tiempo.
 Si el usuario sigue hablando después de los 45 segundos, déjalo terminar completamente.
 Si el usuario termina antes de los 45 segundos, empieza a hablar de inmediato — no esperes al temporizador.
-Recibirás <<SYSTEM_EVENT>> pitch_timer_ended como señal, pero úsalo solo para registrar internamente si el usuario se pasó o terminó antes. Menciónalo brevemente en el coaching como dato, no como crítica.
+REGLA DE FEEDBACK DE TIEMPO:
+Recibirás la duración exacta del pitch en los datos de la simulación.
+Usa solo ese valor cuando comentes el tiempo. Nunca estimes ni adivines.
+Si el usuario se pasó: menciónalo brevemente como algo a mejorar.
+Si el usuario terminó antes: menciónalo como una oportunidad para agregar más detalle la próxima vez.
 
 === CUANDO RECIBAS: <<SYSTEM_EVENT>> pitch_timer_ended ===
 Si el usuario todavía está hablando, NO lo interrumpas. Espera a que termine, luego responde.
@@ -221,6 +231,8 @@ Reglas adicionales:
 - No reveles si las respuestas fueron buenas o malas
 - Después de tu última pregunta (3a o 4a), espera la respuesta completa del usuario. NO hagas la transición al coaching por tu cuenta. Espera <<SYSTEM_EVENT>> qa_complete antes de hacer la transición.
 - NUNCA anuncies el fin de la simulación en el mismo turno que una pregunta. La secuencia siempre es: hacer pregunta → recibir respuesta completa → recibir <<SYSTEM_EVENT>> qa_complete → transición.
+
+CRÍTICO: Después de hacer tu última pregunta, debes esperar a que el usuario termine su respuesta completa antes de hacer la transición al coaching. Solo puedes hacer la transición al coaching DESPUÉS de haber recibido y reconocido la respuesta del usuario a la última pregunta. Nunca hagas la transición a mitad de una pregunta ni inmediatamente después de haberla hecho. La transición ocurre después de la respuesta, no después de la pregunta.
 
 REGLA DE REPETIR PREGUNTA:
 Si el usuario pide que repitas una pregunta ("¿me puedes repetir?", "¿cuál era la pregunta?"), repite la MISMA pregunta palabra por palabra. No la reformules, no la cambies, no hagas una pregunta diferente.
@@ -355,6 +367,8 @@ interface SimulationSnapshot {
   screenFrames: string[];
   pitchDurationSeconds: number;
   exceededTarget: boolean;
+  secondsOver: number;
+  secondsUnder: number;
 }
 
 interface ClientMessage {
@@ -390,10 +404,16 @@ async function generateFeedbackReport(
 
     const pitchDuration = snapshot?.pitchDurationSeconds ?? 0;
     const exceeded = snapshot?.exceededTarget ?? false;
+    const secondsOver = snapshot?.secondsOver ?? 0;
+    const secondsUnder = snapshot?.secondsUnder ?? 0;
     const hasScreenFrames = (snapshot?.screenFrames?.length ?? 0) > 0;
 
+    const timingLine = exceeded
+      ? `They went over by ${secondsOver} seconds.`
+      : `They finished ${secondsUnder} seconds early.`;
+
     const pitchContext = pitchDuration > 0
-      ? `\nPITCH CONTEXT:\n- Pitch duration: ${Math.round(pitchDuration)} seconds (target was 45 seconds)\n- ${exceeded ? 'The presenter exceeded the target time.' : 'The presenter stayed within the target time.'}\n${hasScreenFrames ? '- The presenter shared their screen during the session. Look for AI observations about screen content in the transcript.' : ''}`
+      ? `\nPITCH CONTEXT:\nThe user's pitch lasted ${Math.round(pitchDuration)} seconds. Target was 45 seconds. ${timingLine} Use this accurate data when giving feedback about time management.\n${hasScreenFrames ? '- The presenter shared their screen during the session. Look for AI observations about screen content in the transcript.' : ''}`
       : '';
 
     const prompt = `You are a pitch coach AI. Analyze this pitch simulation session transcript and generate a concise, honest feedback report. ${langInstruction}
@@ -494,7 +514,8 @@ export function setupVoiceWebSocket(server: http.Server): void {
 
     // Pitch timing
     let pitchStartTimestamp = 0;
-    let pitchEndTimestamp = 0;
+    let pitchEndTimestamp = 0;       // when 45s timer fired
+    let userPitchEndTimestamp = 0;   // when user actually stopped speaking after pitch
 
     // Q&A heuristic: word counts per user answer
     const qaAnswerWordCounts: number[] = [];
@@ -512,17 +533,22 @@ export function setupVoiceWebSocket(server: http.Server): void {
     };
 
     const freezeSnapshot = () => {
-      const pitchDurationSeconds = pitchEndTimestamp && pitchStartTimestamp
-        ? (pitchEndTimestamp - pitchStartTimestamp) / 1000
+      // Use when user actually stopped speaking (if captured), otherwise fall back to timer end
+      const effectivePitchEnd = userPitchEndTimestamp || pitchEndTimestamp;
+      const pitchDurationSeconds = effectivePitchEnd && pitchStartTimestamp
+        ? (effectivePitchEnd - pitchStartTimestamp) / 1000
         : 0;
+      const exceededTarget = pitchDurationSeconds > 45;
 
       simulationSnapshot = {
         transcript: [...transcript],
         screenFrames: [...screenFrames],
         pitchDurationSeconds,
-        exceededTarget: pitchDurationSeconds > 45,
+        exceededTarget,
+        secondsOver: exceededTarget ? Math.round(pitchDurationSeconds - 45) : 0,
+        secondsUnder: !exceededTarget ? Math.round(45 - pitchDurationSeconds) : 0,
       };
-      console.log('[timing] simulation_snapshot_frozen', Date.now());
+      console.log('[timing] simulation_snapshot_frozen — duration:', Math.round(pitchDurationSeconds), 'exceeded:', exceededTarget, Date.now());
     };
 
     const injectQaComplete = () => {
@@ -692,6 +718,12 @@ export function setupVoiceWebSocket(server: http.Server): void {
                 timestamp: currentUserTimestamp,
               });
               console.log('[timing] transcript_committed user', Date.now());
+
+              // Capture when user finishes speaking after pitch timer fired
+              if (pitchTimerInjected && !userPitchEndTimestamp && currentPhase === 'pitch') {
+                userPitchEndTimestamp = Date.now();
+                console.log('[timing] user_pitch_end captured', userPitchEndTimestamp);
+              }
 
               // Q&A answer counting heuristic
               if (currentPhase === 'qa' && !qaComplete) {

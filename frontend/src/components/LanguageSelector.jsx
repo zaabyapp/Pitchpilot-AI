@@ -87,7 +87,7 @@ export default function LanguageSelector({ onSelectLanguage, onNavInstructions =
                     <span className="material-symbols-outlined text-sm">arrow_back</span>
                     {isEs ? 'Volver' : 'Back'}
                   </button>
-                  <p className="text-white font-bold text-lg">
+                  <p className="text-white font-bold text-lg" style={{ marginBottom: '32px' }}>
                     {isEs ? '¿Qué quieres hacer hoy?' : 'What would you like to do today?'}
                   </p>
                 </div>
@@ -95,7 +95,7 @@ export default function LanguageSelector({ onSelectLanguage, onNavInstructions =
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', width: '296px', margin: '0 auto' }}>
                   {[
                     { mode: 'practice', icon: 'mic', color: '#7c5cff', label: isEs ? 'Practicar' : 'Practice' },
-                    { mode: 'chat', icon: 'psychology', color: '#34d399', label: isEs ? 'Coaching' : 'Chat' },
+                    { mode: 'chat', icon: 'psychology', color: '#7c5cff', label: isEs ? 'Coaching' : 'Chat' },
                   ].map(({ mode, icon, color, label }) => (
                     <button
                       key={mode}
