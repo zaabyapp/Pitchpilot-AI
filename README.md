@@ -1,110 +1,201 @@
 # PitchPilot AI
 
-**AI Pitch Coach for Builders** — An interactive live AI agent that helps you practice pitching your product using real-time voice, video, and conversational feedback.
+**Real-time AI pitch coach powered by Gemini Live API.**  
+Practice your pitch, get challenged with hard questions, and receive instant feedback — all through a live voice conversation.
 
-**Built for:** Gemini Live Agent Challenge by Google
+Built for the [Gemini Live Agent Challenge](https://geminiliveagentchallenge.devpost.com/) by Google.
 
-## Overview
+🌐 **Live Demo:** [pitchpilot-ai.vercel.app](https://pitchpilot-ai.vercel.app)  
+📦 **Repo:** [github.com/zaabyapp/Pitchpilot-AI](https://github.com/zaabyapp/Pitchpilot-AI)
 
-PitchPilot AI simulates real pitch scenarios where you can practice:
-- Explaining your product to investors
-- Pitching to potential users
-- Presenting at conferences or demo days
+---
 
-The AI agent asks challenging questions in real-time, analyzes your video and body language, and provides detailed feedback to help you improve.
+## What It Does
+
+PitchPilot AI puts you in a real pitch simulation before the real thing.
+
+Choose your audience — investor, teacher, customer, conference — and the AI agent adapts its role and questions accordingly. After your pitch, it challenges you with 3–4 tough follow-up questions, then gives you concise coaching feedback and a detailed report.
+
+**Two modes:**
+- **Practice Pitch** — Full simulation: onboarding → 45s pitch → Q&A → coaching feedback → report
+- **Coach Chat** — Open conversation with your AI coach, share your screen, ask anything about your project
+
+---
+
+## Key Features
+
+- 🎙️ **Live voice conversation** — Real-time bidirectional audio via Gemini Live API
+- 🖥️ **Optional screen sharing** — Share slides, demos, or docs as visual pitch context
+- 🎭 **Adaptive simulation** — Agent plays investor, teacher, customer, or any audience you specify
+- ❓ **Dynamic Q&A** — 3–4 challenging questions based on what you actually said
+- 📊 **Detailed report** — Score, delivery metrics, sentiment analysis, action items
+- 📄 **PDF export** — Download your full feedback report
+- 🌐 **Bilingual** — Full English and Spanish support
+
+---
 
 ## Tech Stack
 
-- **Frontend:** React 18
-- **Backend:** Node.js + Express + TypeScript
-- **AI:** Gemini Live API
-- **Cloud:** Google Cloud Run
-- **Audio/Video:** WebRTC + Browser Media APIs
+| Layer | Technology |
+|---|---|
+| Frontend | React 18 |
+| Backend | Node.js + Express + TypeScript |
+| AI | Gemini Live API (`gemini-2.5-flash-native-audio-preview`) |
+| Real-time | WebSocket (bidirectional audio proxy) |
+| Cloud | Google Cloud Run |
+| Frontend Hosting | Vercel |
+| Audio/Video | WebRTC + Web Audio API + getDisplayMedia |
+
+---
+
+## Architecture
+
+```
+[Browser]
+  ├── Microphone (PCM 16kHz) ──────────────────────────┐
+  ├── Screen Share (JPEG frames, every 15s) ────────────┤
+  └── Playback (PCM 24kHz) ◄──────────────────────────┐│
+                                                        ││
+[Backend — Google Cloud Run]                            ││
+  ├── WebSocket proxy ◄──────────────────────────────── ┘│
+  ├── Phase/state machine (onboarding → pitch → Q&A → coaching)
+  ├── Report generation ──► Gemini text API             │
+  └── Gemini Live API WebSocket ◄──────────────────────── ┘
+
+[Gemini Live API]
+  └── gemini-2.5-flash-native-audio-preview
+```
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 - Node.js 18+
-- npm or yarn
-- Google Cloud Project with Gemini API enabled
-- Microphone and camera access
+- Gemini API key ([get one here](https://aistudio.google.com/apikey))
+- Microphone access in browser
 
-### Setup Instructions
-
-1. **Clone the repository**
+### 1. Clone the repo
 ```bash
-git clone <your-repo-url>
-cd PitchPilotAI
+git clone https://github.com/zaabyapp/Pitchpilot-AI.git
+cd Pitchpilot-AI
 ```
 
-2. **Setup Backend**
+### 2. Setup Backend
 ```bash
 cd backend
 npm install
 cp .env.example .env
-# Edit .env with your API keys and configuration
+# Add your GEMINI_API_KEY to .env
 npm run dev
 ```
 
-3. **Setup Frontend (in new terminal)**
+### 3. Setup Frontend
 ```bash
+# In a new terminal
 cd frontend
 npm install
-cp .env.example .env
 npm start
 ```
 
-4. **Open in Browser**
+### 4. Open in browser
 ```
 http://localhost:3000
 ```
 
+---
+
+## Environment Variables
+
+**Backend (`backend/.env`):**
+```
+GEMINI_API_KEY=your_gemini_api_key
+FRONTEND_URL=http://localhost:3000
+NODE_ENV=development
+```
+
+**Frontend (`frontend/.env.development`):**
+```
+REACT_APP_BACKEND_URL=http://localhost:3001
+```
+
+---
+
+## Cloud Deployment
+
+Backend is deployed on **Google Cloud Run**.
+
+```bash
+# Make sure Docker is running
+chmod +x deploy.sh
+./deploy.sh
+```
+
+Frontend is deployed on **Vercel**:
+```bash
+cd frontend
+npm run build
+vercel --prod
+```
+
+---
+
 ## Project Structure
 
 ```
-PitchPilotAI/
+Pitchpilot-AI/
 ├── backend/
 │   ├── src/
-│   │   ├── routes/
 │   │   ├── services/
-│   │   ├── types/
-│   │   ├── middleware/
-│   │   ├── index.ts
-│   │   └── server.ts
-│   ├── package.json
-│   └── tsconfig.json
+│   │   │   └── voice.websocket.ts   ← Gemini Live proxy + report generation
+│   │   ├── routes/
+│   │   └── index.ts
+│   ├── Dockerfile
+│   ├── deploy.sh
+│   └── .env.example
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   ├── styles/
-│   │   ├── App.jsx
-│   │   └── index.jsx
-│   ├── public/
+│   │   │   ├── PitchRecorder.jsx    ← Main session UI + state machine
+│   │   │   ├── FeedbackReport.jsx   ← Report + PDF export
+│   │   │   └── ...
+│   │   ├── hooks/
+│   │   │   ├── useVoiceSession.js   ← Audio capture + WebSocket
+│   │   │   └── useScreenShare.js    ← Screen share + frame capture
+│   │   └── App.jsx
 │   └── package.json
 │
 └── README.md
 ```
 
-## Development Timeline
+---
 
-- **Days 1-2:** Gemini Live API integration + WebSocket setup
-- **Days 3-4:** Conversational agent logic + Video analysis
-- **Days 5-6:** Feedback generation + Report UI
-- **Days 7-8:** Google Cloud deployment
-- **Days 9-11:** Refinement + Demo + Submission
+## How It Works
 
-## API Endpoints
+1. **Select language** (English / Spanish) and **mode** (Practice Pitch / Coach Chat)
+2. **Onboarding** — Agent asks 2–3 questions to understand your audience and scenario
+3. **Pitch** — 45-second target window (soft limit, you can keep going)
+4. **Q&A** — Agent plays your audience and asks 3–4 challenging follow-up questions
+5. **Coaching** — Live feedback on content, delivery, and screen context
+6. **Report** — Full analysis with score, metrics, action items, exportable as PDF
 
-- `GET /api/health` - Health check
-- `POST /api/pitch/start` - Initialize new pitch session
-- `GET /api/pitch/session/:sessionId` - Get session details
-- `POST /api/pitch/feedback` - Generate feedback (WIP)
-- `GET /api/pitch/report/:sessionId` - Get report (WIP)
+---
 
-## Contributing
+## Learnings
 
-This is a hackathon project. Contributions are welcome!
+- Gemini Live API's native audio model handles real-time bidirectional voice with surprisingly low latency when VAD is tuned correctly
+- Screen share as pitch context (via `getDisplayMedia` + periodic JPEG frames) opens up a genuinely new coaching use case
+- Separating the report snapshot from post-simulation chat is critical — the boundary between "what gets graded" and "free coaching" needs to be explicit in both code and prompt design
+- Prompt engineering for voice agents is fundamentally different from text — conciseness and avoiding meta-commentary are critical
+
+---
+
+## Authors
+
+Built with 🤍 by **Gaby** and **Donato**
+
+---
 
 ## License
 
