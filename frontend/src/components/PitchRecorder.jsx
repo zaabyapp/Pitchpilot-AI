@@ -51,6 +51,8 @@ const TRANSLATIONS = {
     endSession: 'End Session',
     generatingReport: 'Generating your report…',
     analyzingPitch: 'Analyzing your pitch with AI. This takes a few seconds.',
+    reportError: 'Failed to generate report',
+    reportRetry: 'Go to report',
     restartSession: 'Restart Session',
     skipToFeedback: 'Skip to Feedback',
     restartConfirm: 'Are you sure? Your current session data will be lost.',
@@ -84,6 +86,8 @@ const TRANSLATIONS = {
     endSession: 'Terminar',
     generatingReport: 'Generando tu informe…',
     analyzingPitch: 'Analizando tu presentación con IA. Esto toma unos segundos.',
+    reportError: 'Error al generar el reporte',
+    reportRetry: 'Ver reporte',
     restartSession: 'Reiniciar sesión',
     skipToFeedback: 'Pasar a retroalimentación',
     restartConfirm: '¿Estás seguro? Los datos de tu sesión actual se perderán.',
@@ -102,6 +106,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
   const [questionsAnswered, setQuestionsAnswered] = useState(0);
   const [simulationClosingDone, setSimulationClosingDone] = useState(isChat);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [reportTimedOut, setReportTimedOut] = useState(false);
 
   const videoRef = useRef(null);
   const cameraStreamRef = useRef(null);
@@ -227,6 +232,16 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
       stopPeriodicCapture();
     }
   }, [simPhase, stopPeriodicCapture]);
+
+  // Report generation safety timeout — if backend doesn't respond in 35s, show error
+  useEffect(() => {
+    if (simPhase !== PHASE.DONE) return;
+    const timer = setTimeout(() => {
+      console.warn('[Report] Frontend timeout — no report received in 35s');
+      setReportTimedOut(true);
+    }, 35000);
+    return () => clearTimeout(timer);
+  }, [simPhase]);
 
   // ---------------------------------------------------------------------------
   // COACHING → POST_SIM transition (after first AI coaching turn)
@@ -411,6 +426,24 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
 
   // Loading screen while backend generates the report
   if (simPhase === PHASE.DONE) {
+    if (reportTimedOut) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center bg-[#0a0812] text-slate-100 gap-6">
+          <div className="size-16 rounded-full flex items-center justify-center bg-red-500/10 border-2 border-red-500/40">
+            <span className="material-symbols-outlined text-red-400 text-2xl">error</span>
+          </div>
+          <div className="text-center space-y-2">
+            <h2 className="text-xl font-black text-white">{t.reportError}</h2>
+          </div>
+          <button
+            onClick={() => onSessionEnd({ report: null, transcript: [], sessionId, language, questionsAnswered: questionsAnsweredRef.current, endedAt: new Date().toISOString() })}
+            className="bg-[#7c5cff]/20 border border-[#7c5cff]/40 text-[#7c5cff] hover:bg-[#7c5cff]/30 px-6 py-2.5 rounded-xl font-bold text-sm transition-all"
+          >
+            {t.reportRetry}
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-[#0a0812] text-slate-100 gap-8">
         <div className="relative size-20 flex items-center justify-center">
@@ -622,7 +655,7 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
               <div className="flex flex-col gap-2 w-full max-w-xs">
                 <button
                   onClick={handleSkipToFeedback}
-                  className="flex items-center justify-center gap-2 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 hover:bg-emerald-500 hover:text-white px-4 py-2 rounded-xl font-bold text-xs transition-all"
+                  className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-white px-4 py-2 rounded-xl font-bold text-xs transition-all"
                 >
                   <span className="material-symbols-outlined text-sm">fast_forward</span>
                   {t.skipToFeedback}

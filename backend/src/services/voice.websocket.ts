@@ -12,6 +12,12 @@ You are a pitch simulation AI for PitchPilot AI. You play two sequential roles: 
 === RESPONSE SPEED RULE ===
 After the user finishes speaking, respond within 1 second. The only exception is during PHASE 4 (pitch listening) where you stay completely silent. If the user keeps talking after you started, stop immediately and listen until they finish, then respond right away.
 
+=== INTERRUPTION RULE (applies after onboarding) ===
+If the user starts speaking while you are speaking, stop immediately and listen.
+Do not finish your sentence. Just stop and wait for the user to finish.
+Then respond naturally to what they said.
+This applies during pitch recap, Q&A, coaching feedback, and post-simulation chat.
+
 === SCREEN READING RULE ===
 When you receive a screenshot image, read ALL visible text in the image carefully before responding.
 If the user asks what is on their screen, describe exactly what you see — every paragraph, heading, list item, UI element, or text visible in the image.
@@ -139,6 +145,12 @@ Eres un AI de simulación de pitch para PitchPilot AI. Tienes dos roles secuenci
 === REGLA DE VELOCIDAD DE RESPUESTA ===
 Después de que el usuario termine de hablar, responde dentro de 1 segundo. La única excepción es la FASE 4 (escucha del pitch) donde debes permanecer en silencio. Si el usuario sigue hablando después de que empezaste, detente inmediatamente y escucha hasta que termine, luego responde de inmediato.
 
+=== REGLA DE INTERRUPCIONES (aplica después del onboarding) ===
+Si el usuario empieza a hablar mientras tú estás hablando, detente inmediatamente y escucha.
+No termines tu oración. Solo detente y espera a que el usuario termine.
+Luego responde naturalmente a lo que dijo.
+Esto aplica durante el resumen del pitch, las preguntas, el feedback de coaching y el chat post-simulación.
+
 === REGLA DE LECTURA DE PANTALLA ===
 Cuando recibas una imagen de captura de pantalla, lee CUIDADOSAMENTE todo el texto visible en la imagen antes de responder.
 Si el usuario pregunta qué hay en su pantalla, describe exactamente lo que ves — cada párrafo, encabezado, elemento de lista, elemento de interfaz o texto visible en la imagen.
@@ -265,7 +277,7 @@ You are a coaching assistant for PitchPilot AI. This is a free-form coaching con
 
 === OPENING ===
 When you receive <<SYSTEM_EVENT>> session_started, open with EXACTLY this:
-"Hi, I'm your PitchPilot AI coach. It looks like you want to have a conversation — how can I help you today? Whether you have questions, want feedback on something, or want to work through your project, I'm here. And remember, if you have a presentation, document or anything you're working on, you can share your screen and we can look at it together."
+"Hi, I'm your PitchPilot AI coach. What do you need help with today?"
 
 === YOUR ROLE ===
 You are an open, helpful coaching partner. Answer any question about pitching, storytelling, fundraising, product demos, audience targeting, or startup communication. Be direct and specific — never give generic advice.
@@ -298,7 +310,7 @@ Eres un asistente de coaching para PitchPilot AI. Esta es una conversación libr
 
 === APERTURA ===
 Cuando recibas <<SYSTEM_EVENT>> session_started, abre con EXACTAMENTE esto:
-"Hola, soy tu coach de PitchPilot AI. Veo que quieres tener una conversación — ¿cómo puedo ayudarte hoy? Ya sea que tengas preguntas, quieras retroalimentación de algo, o quieras trabajar en tu proyecto, aquí estoy. Y recuerda, si tienes una presentación, documento o algo en lo que estés trabajando, puedes compartir tu pantalla y lo analizamos juntos."
+"Hola, soy tu coach de PitchPilot AI. ¿En qué necesitas que te ayude hoy con tu desarrollo?"
 
 === TU ROL ===
 Eres un coach abierto y útil. Responde cualquier pregunta sobre pitching, storytelling, fundraising, demos de producto, segmentación de audiencia o comunicación de startups. Sé directo y específico — nunca des consejos genéricos.
@@ -540,12 +552,23 @@ export function setupVoiceWebSocket(server: http.Server): void {
       // Use snapshot transcript if available, otherwise fall back to full transcript
       const reportTranscript = simulationSnapshot?.transcript ?? transcript;
 
-      console.log('[timing] report_generation_started', Date.now());
-      console.log('[VoiceWS] Generating feedback report for', reportTranscript.length, 'transcript entries...');
+      console.log('[Report] Starting generation...');
+      console.log('[Report] Transcript entries:', reportTranscript.length);
 
-      const reportData = await generateFeedbackReport(reportTranscript, apiKey, sessionLanguage, simulationSnapshot);
+      let reportData: object | null = null;
+      try {
+        console.log('[Report] Sending request to Gemini...');
+        const reportPromise = generateFeedbackReport(reportTranscript, apiKey, sessionLanguage, simulationSnapshot);
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('Report generation timeout')), 30000)
+        );
+        reportData = await Promise.race([reportPromise, timeoutPromise]);
+        console.log('[Report] Response received, parsing...');
+      } catch (error) {
+        console.error('[Report] Generation failed or timed out:', error);
+      }
 
-      console.log('[timing] report_generation_finished', Date.now());
+      console.log('[Report] Sending report to frontend...');
       sendToClient({ type: 'report', data: reportData, transcript: reportTranscript });
 
       if (clientWs.readyState === WebSocket.OPEN) {
