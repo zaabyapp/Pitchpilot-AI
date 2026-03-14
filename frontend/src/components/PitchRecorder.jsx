@@ -116,6 +116,9 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
   const injectTextRef = useRef(null);
   const startPitchCountdownRef = useRef(null);
   const coachingStartIndexRef = useRef(-1);
+  const pitchStartTimeRef = useRef(0);
+  const pitchEndTimeRef = useRef(0);
+  const sendPitchDurationRef = useRef(null);
 
   simPhaseRef.current = simPhase;
   questionsAnsweredRef.current = questionsAnswered;
@@ -140,6 +143,18 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
       startPitchCountdownRef.current?.();
     } else if (event.type === 'phase_event' && event.phase === 'qa_start') {
       setSimPhase(PHASE.QA_ACTIVE);
+      // Send accurate pitch duration to backend now that user has finished speaking
+      if (pitchStartTimeRef.current > 0) {
+        const endTime = pitchEndTimeRef.current || Date.now();
+        const actualDurationSeconds = (endTime - pitchStartTimeRef.current) / 1000;
+        const exceededTarget = actualDurationSeconds > 45;
+        sendPitchDurationRef.current?.({
+          actualDurationSeconds,
+          exceededTarget,
+          secondsOver: exceededTarget ? Math.round(actualDurationSeconds - 45) : 0,
+          secondsUnder: !exceededTarget ? Math.round(45 - actualDurationSeconds) : 0,
+        });
+      }
     } else if (event.type === 'phase_event' && event.phase === 'qa_answer_counted') {
       setQuestionsAnswered(event.count ?? 0);
     } else if (event.type === 'phase_event' && event.phase === 'qa_complete') {
@@ -158,12 +173,13 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
     }
   }, [onSessionEnd, sessionId, language]);
 
-  const { status, isAISpeaking, isUserSpeaking, micStream, transcript, connect, disconnect, injectText, sendScreenFrame, requestReport, skipToFeedback } =
+  const { status, isAISpeaking, isStalled, isUserSpeaking, micStream, transcript, connect, disconnect, injectText, sendScreenFrame, sendPitchDuration, requestReport, skipToFeedback } =
     useVoiceSession({ onEvent: handleEvent });
 
   const disconnectRef = useRef(disconnect);
   disconnectRef.current = disconnect;
   injectTextRef.current = injectText;
+  sendPitchDurationRef.current = sendPitchDuration;
 
   // ---------------------------------------------------------------------------
   // Pitch timer
@@ -177,6 +193,8 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
 
     clearInterval(pitchTimerRef.current);
     setSimPhase(PHASE.PITCH_ACTIVE);
+    pitchStartTimeRef.current = Date.now();
+    pitchEndTimeRef.current = 0;
     let timeLeft = PITCH_DURATION;
     setPitchTimeLeft(timeLeft);
 
@@ -198,6 +216,19 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
   }, [isScreenSharing, captureScreenFrame, sendScreenFrame]);
 
   startPitchCountdownRef.current = startPitchCountdown;
+
+  // Track the last moment the user went silent during pitch phases.
+  // Runs on every isUserSpeaking change. The final false-transition before
+  // QA_ACTIVE is the accurate "user finished speaking" timestamp.
+  useEffect(() => {
+    if (
+      (simPhase === PHASE.PITCH_ACTIVE || simPhase === PHASE.QA_WAITING) &&
+      !isUserSpeaking &&
+      pitchStartTimeRef.current > 0
+    ) {
+      pitchEndTimeRef.current = Date.now();
+    }
+  }, [isUserSpeaking, simPhase]);
 
   // Transition ONBOARDING → PITCH_INTRO after 3 final AI turns
   useEffect(() => {
@@ -630,6 +661,11 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
                 {simPhase === PHASE.COACHING && t.coachSummary}
                 {simPhase === PHASE.POST_SIM && t.askAnything}
               </p>
+
+              {/* Stall indicator */}
+              {isStalled && !isAISpeaking && (
+                <p className="text-slate-500 text-xs animate-pulse">Still processing…</p>
+              )}
 
               {/* Q&A question counter */}
               {(simPhase === PHASE.QA_WAITING || simPhase === PHASE.QA_ACTIVE) && questionsAnswered > 0 && (

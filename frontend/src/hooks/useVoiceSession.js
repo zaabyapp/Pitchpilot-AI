@@ -291,6 +291,12 @@ export function useVoiceSession({ onEvent } = {}) {
               setTranscript((prev) => [...prev, { role: 'ai', text: aiText, timestamp: ts, isFinal: true }]);
             }
             aiBufferRef.current = '';
+          } else if (msg.type === 'stall_detected') {
+            setIsStalled(true);
+            console.log('[useVoiceSession] Stall detected by backend');
+          } else if (msg.type === 'session_error') {
+            console.error('[useVoiceSession] Session error:', msg.message);
+            setStatus('error');
           } else if (msg.type === 'error') {
             console.error('[useVoiceSession] Server error:', msg.message);
             setStatus('error');
@@ -398,6 +404,13 @@ export function useVoiceSession({ onEvent } = {}) {
     }
   }, []);
 
+  const sendPitchDuration = useCallback((data) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'pitch_duration', ...data }));
+      console.log('[timing] pitch_duration_sent', data);
+    }
+  }, []);
+
   return {
     status,
     isAISpeaking,
@@ -410,6 +423,7 @@ export function useVoiceSession({ onEvent } = {}) {
     disconnect,
     injectText,
     sendScreenFrame,
+    sendPitchDuration,
     requestReport,
     skipToFeedback,
   };
