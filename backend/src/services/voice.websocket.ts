@@ -12,11 +12,12 @@ You are a pitch simulation AI for PitchPilot AI. You play two sequential roles: 
 === RESPONSE SPEED RULE ===
 After the user finishes speaking, respond within 1 second. The only exception is during PHASE 4 (pitch listening) where you stay completely silent. If the user keeps talking after you started, stop immediately and listen until they finish, then respond right away.
 
-=== INTERRUPTION RULE (applies after onboarding) ===
+=== INTERRUPTION RULE (ALWAYS ACTIVE) ===
 If the user starts speaking while you are speaking, stop immediately and listen.
 Do not finish your sentence. Just stop and wait for the user to finish.
 Then respond naturally to what they said.
-This applies during pitch recap, Q&A, coaching feedback, and post-simulation chat.
+This applies at ALL times — including onboarding, pitch recap, Q&A, coaching feedback, and post-simulation chat.
+Never ignore the user. Always prioritize listening over completing your own speech.
 
 === SCREEN READING RULE ===
 When you receive a screenshot image, read ALL visible text in the image carefully before responding.
@@ -142,7 +143,8 @@ Do not re-announce that the report is ready after the closing. Do not try to end
 - NEVER use bold text, headers, or markdown of any kind
 - NEVER repeat, acknowledge, or echo any <<SYSTEM_EVENT>> message
 - NEVER offer feedback or coaching during simulation phases (4 and 5)
-- You have already announced the report is ready. Do not repeat this.`;
+- You have already announced the report is ready. Do not repeat this.
+- RESPOND IMMEDIATELY — do not pause to "analyze" or "process". Start speaking within 1 second of the user finishing. Your responses should feel like a natural conversation, not a lecture.`;
 
 const SYSTEM_PROMPT_ES = `[SESIÓN EN ESPAÑOL — RESPONDE ÚNICA Y EXCLUSIVAMENTE EN ESPAÑOL EN TODO MOMENTO. NUNCA USES INGLÉS.]
 
@@ -151,11 +153,12 @@ Eres un AI de simulación de pitch para PitchPilot AI. Tienes dos roles secuenci
 === REGLA DE VELOCIDAD DE RESPUESTA ===
 Después de que el usuario termine de hablar, responde dentro de 1 segundo. La única excepción es la FASE 4 (escucha del pitch) donde debes permanecer en silencio. Si el usuario sigue hablando después de que empezaste, detente inmediatamente y escucha hasta que termine, luego responde de inmediato.
 
-=== REGLA DE INTERRUPCIONES (aplica después del onboarding) ===
+=== REGLA DE INTERRUPCIONES (SIEMPRE ACTIVA) ===
 Si el usuario empieza a hablar mientras tú estás hablando, detente inmediatamente y escucha.
 No termines tu oración. Solo detente y espera a que el usuario termine.
 Luego responde naturalmente a lo que dijo.
-Esto aplica durante el resumen del pitch, las preguntas, el feedback de coaching y el chat post-simulación.
+Esto aplica EN TODO MOMENTO — incluyendo onboarding, resumen del pitch, las preguntas, el feedback de coaching y el chat post-simulación.
+Nunca ignores al usuario. Siempre prioriza escuchar sobre completar tu propio discurso.
 
 === REGLA DE LECTURA DE PANTALLA ===
 Cuando recibas una imagen de captura de pantalla, lee CUIDADOSAMENTE todo el texto visible en la imagen antes de responder.
@@ -281,11 +284,18 @@ No vuelvas a anunciar que el reporte está listo después del cierre. No intente
 - NUNCA uses negritas, encabezados ni markdown de ningún tipo
 - NUNCA repitas, respondas ni hagas eco de ningún mensaje <<SYSTEM_EVENT>>
 - NUNCA ofrezcas retroalimentación ni coaching durante las fases de simulación (4 y 5)
-- Ya anunciaste que el reporte está listo. No lo repitas.`;
+- Ya anunciaste que el reporte está listo. No lo repitas.
+- RESPONDE INMEDIATAMENTE — no hagas pausas para "analizar" o "procesar". Empieza a hablar dentro de 1 segundo de que el usuario termine. Tus respuestas deben sentirse como una conversación natural, no como una clase.`;
 
 const SYSTEM_PROMPT_COACH_EN = `[SESSION IN ENGLISH — RESPOND EXCLUSIVELY IN ENGLISH AT ALL TIMES. NEVER USE SPANISH.]
 
 You are a coaching assistant for PitchPilot AI. This is a free-form coaching conversation — there is no pitch simulation or timer.
+
+=== INTERRUPTION RULE (ALWAYS ACTIVE) ===
+If the user starts speaking while you are speaking, stop immediately and listen.
+Do not finish your sentence. Just stop and wait for the user to finish.
+Then respond naturally to what they said.
+Always prioritize listening over completing your own speech.
 
 === OPENING ===
 When you receive <<SYSTEM_EVENT>> session_started, open with EXACTLY this:
@@ -314,11 +324,18 @@ Your goal is to help the user develop and improve their project, idea, or produc
 - NEVER output internal reasoning, planning or thinking out loud
 - NEVER use bold text, headers, or markdown of any kind
 - NEVER repeat, acknowledge, or echo any <<SYSTEM_EVENT>> message
-- Keep responses concise — this is a conversation, not a lecture`;
+- Keep responses concise — this is a conversation, not a lecture
+- RESPOND IMMEDIATELY — do not pause to "analyze" or "process". Start speaking within 1 second of the user finishing.`;
 
 const SYSTEM_PROMPT_COACH_ES = `[SESIÓN EN ESPAÑOL — RESPONDE ÚNICA Y EXCLUSIVAMENTE EN ESPAÑOL EN TODO MOMENTO. NUNCA USES INGLÉS.]
 
 Eres un asistente de coaching para PitchPilot AI. Esta es una conversación libre de coaching — no hay simulación de pitch ni temporizador.
+
+=== REGLA DE INTERRUPCIONES (SIEMPRE ACTIVA) ===
+Si el usuario empieza a hablar mientras tú estás hablando, detente inmediatamente y escucha.
+No termines tu oración. Solo detente y espera a que el usuario termine.
+Luego responde naturalmente a lo que dijo.
+Siempre prioriza escuchar sobre completar tu propio discurso.
 
 === APERTURA ===
 Cuando recibas <<SYSTEM_EVENT>> session_started, abre con EXACTAMENTE esto:
@@ -347,7 +364,8 @@ Tu objetivo es ayudar al usuario a desarrollar y mejorar su proyecto, idea o pro
 - NUNCA verbalices razonamiento, planificación o pensamiento interno
 - NUNCA uses negritas, encabezados ni markdown de ningún tipo
 - NUNCA repitas, respondas ni hagas eco de ningún mensaje <<SYSTEM_EVENT>>
-- Mantén las respuestas concisas — esto es una conversación, no una clase`;
+- Mantén las respuestas concisas — esto es una conversación, no una clase
+- RESPONDE INMEDIATAMENTE — no hagas pausas para "analizar" o "procesar". Empieza a hablar dentro de 1 segundo de que el usuario termine.`;
 
 // ---------------------------------------------------------------------------
 // Phase-detection helpers
@@ -652,25 +670,32 @@ export function setupVoiceWebSocket(server: http.Server): void {
       console.log('[Report] Starting generation...');
       console.log('[Report] Transcript entries:', reportTranscript.length);
 
+      // Send immediate acknowledgment so frontend knows report is being generated
+      sendToClient({ type: 'report_generating' });
+
       let reportData: object | null = null;
       try {
         console.log('[Report] Sending request to Gemini...');
         const reportPromise = generateFeedbackReport(reportTranscript, apiKey, sessionLanguage, simulationSnapshot);
         const timeoutPromise = new Promise<null>((_, reject) =>
-          setTimeout(() => reject(new Error('Report generation timeout')), 30000)
+          setTimeout(() => reject(new Error('Report generation timeout')), 45000)
         );
         reportData = await Promise.race([reportPromise, timeoutPromise]);
-        console.log('[Report] Response received, parsing...');
+        console.log('[Report] Response received successfully');
       } catch (error) {
         console.error('[Report] Generation failed or timed out:', error);
+        // Still send report with null data so frontend can handle gracefully
       }
 
-      console.log('[Report] Sending report to frontend...');
+      console.log('[Report] Sending report to frontend, data:', reportData ? 'present' : 'null');
       sendToClient({ type: 'report', data: reportData, transcript: reportTranscript });
 
-      if (clientWs.readyState === WebSocket.OPEN) {
-        clientWs.close(1000, 'Session complete');
-      }
+      // Small delay before closing to ensure message is sent
+      setTimeout(() => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.close(1000, 'Session complete');
+        }
+      }, 500);
     };
 
     const connectToGemini = (language: string, mode: string = 'practice', isReconnect = false) => {
@@ -722,10 +747,12 @@ export function setupVoiceWebSocket(server: http.Server): void {
               automaticActivityDetection: {
                 disabled: false,
                 startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
-                endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
-                prefixPaddingMs: 200,
-                silenceDurationMs: 500,
+                endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+                prefixPaddingMs: 100,
+                silenceDurationMs: 1000,
               },
+              activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
+              turnCoverage: 'TURN_INCLUDES_ALL_INPUT',
             },
             contextWindowCompression: {
               slidingWindow: {},

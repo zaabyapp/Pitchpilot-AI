@@ -279,6 +279,9 @@ export function useVoiceSession({ onEvent } = {}) {
             }
           } else if (msg.type === 'phase_event') {
             onEventRef.current?.({ type: 'phase_event', phase: msg.phase, count: msg.count });
+          } else if (msg.type === 'report_generating') {
+            console.log('[useVoiceSession] Report generation started');
+            onEventRef.current?.({ type: 'report_generating' });
           } else if (msg.type === 'report') {
             setReportData({ data: msg.data, transcript: msg.transcript });
             onEventRef.current?.({ type: 'report', data: msg.data, transcript: msg.transcript });

@@ -264,13 +264,13 @@ export default function PitchRecorder({ language, sessionId, onSessionEnd, mode 
     }
   }, [simPhase, stopPeriodicCapture]);
 
-  // Report generation safety timeout — if backend doesn't respond in 35s, show error
+  // Report generation safety timeout — if backend doesn't respond in 50s, show error
   useEffect(() => {
     if (simPhase !== PHASE.DONE) return;
     const timer = setTimeout(() => {
-      console.warn('[Report] Frontend timeout — no report received in 35s');
+      console.warn('[Report] Frontend timeout — no report received in 50s');
       setReportTimedOut(true);
-    }, 35000);
+    }, 50000);
     return () => clearTimeout(timer);
   }, [simPhase]);
 
