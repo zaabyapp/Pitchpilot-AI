@@ -372,11 +372,15 @@ interface SimulationSnapshot {
 }
 
 interface ClientMessage {
-  type: 'init' | 'audio' | 'end_session' | 'inject_text' | 'screen_frame' | 'screen_context' | 'skip_qa';
+  type: 'init' | 'audio' | 'end_session' | 'inject_text' | 'screen_frame' | 'screen_context' | 'skip_qa' | 'pitch_duration';
   language?: string;
   mode?: 'practice' | 'chat';
   data?: string;
   text?: string;
+  actualDurationSeconds?: number;
+  exceededTarget?: boolean;
+  secondsOver?: number;
+  secondsUnder?: number;
 }
 
 async function generateFeedbackReport(
@@ -498,7 +502,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
     let sessionLanguage = 'en';
 
     // Full transcript (includes post-simulation chat)
-    const transcript: TranscriptEntry[] = [];
+    let transcript: TranscriptEntry[] = [];
     let currentAiTextBuffer = '';
     let currentUserTextBuffer = '';
     let currentUserTimestamp = 0;
@@ -509,22 +513,54 @@ export function setupVoiceWebSocket(server: http.Server): void {
     let pitchTimerInjected = false;
     let qaStartEmitted = false;
     let qaComplete = false;
+    let qaCompleteScheduled = false;
+    let qaCompleteTimer: ReturnType<typeof setTimeout> | null = null;
     let reportSent = false;
     let sessionEndRequested = false;
+
+    // Reconnection tracking
+    let sessionMode = 'practice';
+    let reconnectAttempts = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+
+    // Stall detection
+    let lastUserTurnText = '';
+    let stallDetectTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Pitch timing
     let pitchStartTimestamp = 0;
     let pitchEndTimestamp = 0;       // when 45s timer fired
-    let userPitchEndTimestamp = 0;   // when user actually stopped speaking after pitch
+    let userPitchEndTimestamp = 0;   // when user actually stopped speaking after pitch (backend estimate)
+    let frontendPitchData: { pitchDurationSeconds: number; exceededTarget: boolean; secondsOver: number; secondsUnder: number } | null = null;
+    let pitchDurationData: { actualDurationSeconds: number; exceededTarget: boolean; secondsOver: number; secondsUnder: number } | null = null;
 
     // Q&A heuristic: word counts per user answer
     const qaAnswerWordCounts: number[] = [];
 
     // Screen frames captured during formal simulation
-    const screenFrames: string[] = [];
+    let screenFrames: string[] = [];
 
     // Simulation snapshot — frozen at qa_complete
     let simulationSnapshot: SimulationSnapshot | null = null;
+
+    const resetSessionState = () => {
+      transcript = [];
+      reportSent = false;
+      sessionEndRequested = false;
+      reconnectAttempts = 0;
+      lastUserTurnText = '';
+      screenFrames = [];
+      simulationSnapshot = null;
+      pitchEndTimestamp = 0;
+      frontendPitchData = null;
+      pitchDurationData = null;
+      isInitialized = false;
+      currentAiTextBuffer = '';
+      currentUserTextBuffer = '';
+      currentUserTimestamp = 0;
+      if (qaCompleteTimer) { clearTimeout(qaCompleteTimer); qaCompleteTimer = null; }
+    };
 
     const sendToClient = (payload: object) => {
       if (clientWs.readyState === WebSocket.OPEN) {
@@ -532,23 +568,58 @@ export function setupVoiceWebSocket(server: http.Server): void {
       }
     };
 
+    const clearStallTimers = () => {
+      if (stallDetectTimer) { clearTimeout(stallDetectTimer); stallDetectTimer = null; }
+    };
+
+    const buildResumeContext = () => {
+      const phaseDesc: Record<string, string> = {
+        onboarding: 'onboarding phase (gathering context about the pitch audience and scenario)',
+        pitch: 'pitch listening phase (user was delivering their 45-second pitch)',
+        qa: 'Q&A phase (you were asking follow-up questions about the pitch)',
+        post_sim: 'post-simulation coaching chat',
+      };
+      const recent = transcript.slice(-4)
+        .map((e) => `${e.role === 'ai' ? 'You' : 'User'}: ${e.text}`)
+        .join('\n');
+      return `<<SYSTEM_EVENT>> session_reconnected — The connection was briefly interrupted and has been restored. You are currently in the ${phaseDesc[currentPhase] ?? currentPhase}. Continue naturally from where you left off without mentioning the interruption.\n\nRecent context:\n${recent}`;
+    };
+
     const freezeSnapshot = () => {
-      // Use when user actually stopped speaking (if captured), otherwise fall back to timer end
-      const effectivePitchEnd = userPitchEndTimestamp || pitchEndTimestamp;
-      const pitchDurationSeconds = effectivePitchEnd && pitchStartTimestamp
-        ? (effectivePitchEnd - pitchStartTimestamp) / 1000
-        : 0;
-      const exceededTarget = pitchDurationSeconds > 45;
+      let pitchDurationSeconds: number;
+      let exceededTarget: boolean;
+      let secondsOver: number;
+      let secondsUnder: number;
+
+      if (frontendPitchData) {
+        // Prefer accurate client-side measurement
+        ({ pitchDurationSeconds, exceededTarget, secondsOver, secondsUnder } = frontendPitchData);
+        console.log('[timing] simulation_snapshot_frozen — using frontend data, duration:', Math.round(pitchDurationSeconds), 'exceeded:', exceededTarget);
+      } else if (pitchDurationData) {
+        // Use server-side calculation captured at qa_start (last user turn in pitch phase)
+        pitchDurationSeconds = pitchDurationData.actualDurationSeconds;
+        ({ exceededTarget, secondsOver, secondsUnder } = pitchDurationData);
+        console.log('[timing] simulation_snapshot_frozen — using pitchDurationData, duration:', pitchDurationSeconds, 'exceeded:', exceededTarget);
+      } else {
+        // Fallback: server-side estimate from timestamps
+        const effectivePitchEnd = userPitchEndTimestamp || pitchEndTimestamp;
+        pitchDurationSeconds = effectivePitchEnd && pitchStartTimestamp
+          ? (effectivePitchEnd - pitchStartTimestamp) / 1000
+          : 0;
+        exceededTarget = pitchDurationSeconds > 45;
+        secondsOver = exceededTarget ? Math.round(pitchDurationSeconds - 45) : 0;
+        secondsUnder = !exceededTarget ? Math.round(45 - pitchDurationSeconds) : 0;
+        console.log('[timing] simulation_snapshot_frozen — using server estimate, duration:', Math.round(pitchDurationSeconds), 'exceeded:', exceededTarget);
+      }
 
       simulationSnapshot = {
         transcript: [...transcript],
         screenFrames: [...screenFrames],
         pitchDurationSeconds,
         exceededTarget,
-        secondsOver: exceededTarget ? Math.round(pitchDurationSeconds - 45) : 0,
-        secondsUnder: !exceededTarget ? Math.round(45 - pitchDurationSeconds) : 0,
+        secondsOver,
+        secondsUnder,
       };
-      console.log('[timing] simulation_snapshot_frozen — duration:', Math.round(pitchDurationSeconds), 'exceeded:', exceededTarget, Date.now());
     };
 
     const injectQaComplete = () => {
@@ -602,16 +673,32 @@ export function setupVoiceWebSocket(server: http.Server): void {
       }
     };
 
-    const connectToGemini = (language: string, mode: string = 'practice') => {
+    const connectToGemini = (language: string, mode: string = 'practice', isReconnect = false) => {
+      sessionMode = mode;
+      console.log('[VoiceWS] Session language:', language, '— using prompt:', language === 'es' ? 'ES' : 'EN');
       let systemPrompt: string;
       if (mode === 'chat') {
         systemPrompt = language === 'es' ? SYSTEM_PROMPT_COACH_ES : SYSTEM_PROMPT_COACH_EN;
       } else {
         systemPrompt = language === 'es' ? SYSTEM_PROMPT_ES : SYSTEM_PROMPT_EN;
       }
-      sessionStartTime = Date.now();
+      if (!isReconnect) {
+        sessionStartTime = Date.now();
+        resetSessionState();
+        // Reset phase state — preserved across reconnects
+        currentPhase = 'onboarding';
+        pitchStartFired = false;
+        pitchTimerInjected = false;
+        qaComplete = false;
+        qaCompleteScheduled = false;
+        qaAnswerWordCounts.length = 0;
+        qaStartEmitted = false;
+        pitchStartTimestamp = 0;
+        userPitchEndTimestamp = 0;
+      }
 
       geminiWs = new WebSocket(`${GEMINI_LIVE_URL}?key=${apiKey}`);
+      let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
 
       geminiWs.on('open', () => {
         console.log('[VoiceWS] Gemini WebSocket connected, sending setup...');
@@ -637,13 +724,21 @@ export function setupVoiceWebSocket(server: http.Server): void {
                 startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
                 endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
                 prefixPaddingMs: 200,
-                silenceDurationMs: 700,
+                silenceDurationMs: 500,
               },
             },
           },
         };
         console.log('[VoiceWS] Sending setup:', JSON.stringify(setupMsg, null, 2));
         geminiWs!.send(JSON.stringify(setupMsg));
+
+        // Keepalive: prevent idle disconnection
+        keepaliveInterval = setInterval(() => {
+          if (geminiWs?.readyState === WebSocket.OPEN) {
+            (geminiWs as any).ping();
+            console.log('[VoiceWS] Keepalive ping sent');
+          }
+        }, 20000);
       });
 
       geminiWs.on('message', (raw) => {
@@ -652,14 +747,24 @@ export function setupVoiceWebSocket(server: http.Server): void {
 
           if (msg.setupComplete !== undefined) {
             isInitialized = true;
-            console.log('[VoiceWS] Gemini setup complete, sending session_started trigger');
-            sendToClient({ type: 'ready' });
-            geminiWs!.send(JSON.stringify({
-              clientContent: {
-                turns: [{ role: 'user', parts: [{ text: '<<SYSTEM_EVENT>> session_started' }] }],
-                turnComplete: true,
-              },
-            }));
+            if (!isReconnect) {
+              console.log('[VoiceWS] Gemini setup complete, sending session_started trigger');
+              sendToClient({ type: 'ready' });
+              geminiWs!.send(JSON.stringify({
+                clientContent: {
+                  turns: [{ role: 'user', parts: [{ text: '<<SYSTEM_EVENT>> session_started' }] }],
+                  turnComplete: true,
+                },
+              }));
+            } else {
+              console.log('[VoiceWS] Gemini reconnected — injecting resume context');
+              geminiWs!.send(JSON.stringify({
+                clientContent: {
+                  turns: [{ role: 'user', parts: [{ text: buildResumeContext() }] }],
+                  turnComplete: true,
+                },
+              }));
+            }
             return;
           }
 
@@ -694,6 +799,7 @@ export function setupVoiceWebSocket(server: http.Server): void {
           if (modelTurn?.parts) {
             for (const part of modelTurn.parts) {
               if (part.inlineData?.data) {
+                clearStallTimers(); // AI audio arriving — cancel stall detection
                 sendToClient({
                   type: 'audio',
                   data: part.inlineData.data,
@@ -719,33 +825,59 @@ export function setupVoiceWebSocket(server: http.Server): void {
               });
               console.log('[timing] transcript_committed user', Date.now());
 
-              // Capture when user finishes speaking after pitch timer fired
-              if (pitchTimerInjected && !userPitchEndTimestamp && currentPhase === 'pitch') {
+              // Keep updating on every user turn in pitch phase
+              if (currentPhase === 'pitch') {
                 userPitchEndTimestamp = Date.now();
-                console.log('[timing] user_pitch_end captured', userPitchEndTimestamp);
+                console.log('[Pitch] Updated pitch end timestamp:', userPitchEndTimestamp);
+              }
+
+              // Stall detection: start timer expecting AI response (not during silent pitch phase)
+              lastUserTurnText = userText;
+              if (currentPhase !== 'pitch') {
+                clearStallTimers();
+                stallDetectTimer = setTimeout(() => {
+                  console.log('[VoiceWS] Response stalled — no AI audio after 10s');
+                  sendToClient({ type: 'stall_detected' });
+                }, 10000);
               }
 
               // Q&A answer counting heuristic
               if (currentPhase === 'qa' && !qaComplete) {
                 const wordCount = userText.split(/\s+/).filter(Boolean).length;
-                qaAnswerWordCounts.push(wordCount);
 
-                // Send count update to frontend
-                sendToClient({
-                  type: 'phase_event',
-                  phase: 'qa_answer_counted',
-                  count: qaAnswerWordCounts.length,
-                });
+                if (wordCount < 8) {
+                  console.log(`[QA] Short utterance ignored (${wordCount} words): "${userText}"`);
+                } else {
+                  qaAnswerWordCounts.push(wordCount);
+                  const qaAnswerCount = qaAnswerWordCounts.length;
 
-                // Check if Q&A should end
-                if (qaAnswerWordCounts.length >= 4) {
-                  // Always end after 4 answers
-                  injectQaComplete();
-                } else if (qaAnswerWordCounts.length >= 3) {
-                  // End after 3 if all answers were substantial (>= 30 words)
-                  const allSubstantial = qaAnswerWordCounts.every((w) => w >= 30);
-                  if (allSubstantial) {
-                    injectQaComplete();
+                  // Send count update to frontend
+                  sendToClient({
+                    type: 'phase_event',
+                    phase: 'qa_answer_counted',
+                    count: qaAnswerCount,
+                  });
+
+                  // Check if Q&A should end
+                  if (qaAnswerCount >= 4) {
+                    // Always end after 4 answers
+                    console.log(`[QA] Answer ${qaAnswerCount} recorded, words: ${wordCount}, threshold met: true`);
+                    if (!qaCompleteScheduled && !qaComplete) {
+                      qaCompleteScheduled = true;
+                      console.log('[QA] Scheduling qa_complete in 2s...');
+                      qaCompleteTimer = setTimeout(() => { injectQaComplete(); }, 2000);
+                    }
+                  } else if (qaAnswerCount >= 3) {
+                    // End after 3 if all answers were substantial (>= 30 words)
+                    const allSubstantial = qaAnswerWordCounts.every((w) => w >= 30);
+                    console.log(`[QA] Answer ${qaAnswerCount} recorded, words: ${wordCount}, threshold met: ${allSubstantial}`);
+                    if (allSubstantial && !qaCompleteScheduled && !qaComplete) {
+                      qaCompleteScheduled = true;
+                      console.log('[QA] Scheduling qa_complete in 2s...');
+                      qaCompleteTimer = setTimeout(() => { injectQaComplete(); }, 2000);
+                    }
+                  } else {
+                    console.log(`[QA] Answer ${qaAnswerCount} recorded, words: ${wordCount}, threshold met: false`);
                   }
                 }
               }
@@ -779,6 +911,16 @@ export function setupVoiceWebSocket(server: http.Server): void {
                 qaStartEmitted = true;
                 pitchTimerInjected = false;
                 currentPhase = 'qa';
+
+                // Calculate final pitch duration from last user turn timestamp
+                const effectiveEnd = userPitchEndTimestamp || pitchEndTimestamp;
+                const actualDurationSeconds = Math.round((effectiveEnd - pitchStartTimestamp) / 1000);
+                const exceededTarget = actualDurationSeconds > 45;
+                const secondsOver = exceededTarget ? actualDurationSeconds - 45 : 0;
+                const secondsUnder = !exceededTarget ? 45 - actualDurationSeconds : 0;
+                console.log(`[Pitch] Final duration: ${actualDurationSeconds}s, exceeded: ${exceededTarget}, over: ${secondsOver}s, under: ${secondsUnder}s`);
+                pitchDurationData = { actualDurationSeconds, exceededTarget, secondsOver, secondsUnder };
+
                 console.log('[VoiceWS] First AI turn after pitch end — firing qa_start');
                 sendToClient({ type: 'phase_event', phase: 'qa_start' });
               }
@@ -802,11 +944,26 @@ export function setupVoiceWebSocket(server: http.Server): void {
         const reasonStr = reason?.toString() || 'unknown';
         console.log(`[VoiceWS] Gemini WebSocket closed — code=${code}, reason=${reasonStr}, sessionEndRequested=${sessionEndRequested}`);
 
+        if (keepaliveInterval) { clearInterval(keepaliveInterval); keepaliveInterval = null; }
+        clearStallTimers();
+
         if (sessionEndRequested) {
           // Normal flow: user ended session, generate report
           sendReport();
+        } else if (code !== 1000 && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          // Unexpected drop — attempt reconnection
+          reconnectAttempts++;
+          console.log(`[VoiceWS] Gemini dropped unexpectedly — reconnecting... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          isInitialized = false;
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectToGemini(sessionLanguage, sessionMode, true);
+          }, 1000);
+        } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          console.error('[VoiceWS] Max reconnect attempts reached — giving up');
+          sendToClient({ type: 'session_error', message: 'Connection lost. Please refresh.' });
         } else {
-          // Unexpected close (connection failure, bad model, API error)
+          // code 1000 but no user end request (edge case)
           console.error('[VoiceWS] Gemini closed unexpectedly — NOT generating report');
           sendToClient({ type: 'error', message: 'AI connection closed unexpectedly' });
         }
@@ -832,9 +989,13 @@ export function setupVoiceWebSocket(server: http.Server): void {
           // Strip any accidental data URL prefix — send only raw base64
           const rawBase64 = (msg.data ?? '').replace(/^data:image\/[a-z]+;base64,/, '');
 
-          // Store screen frame for snapshot
+          // Store screen frame for snapshot (cap at 15 to avoid memory bloat)
           if (!qaComplete) {
             screenFrames.push(rawBase64);
+            if (screenFrames.length > 15) {
+              screenFrames.shift();
+            }
+            console.log(`[ScreenShare] Frame stored, total frames: ${screenFrames.length}`);
           }
           console.log(`[ScreenShare] Forwarding frame to Gemini, size: ${rawBase64.length} chars`);
 
@@ -858,8 +1019,12 @@ export function setupVoiceWebSocket(server: http.Server): void {
             },
           }));
         } else if (msg.type === 'inject_text' && isInitialized && geminiWs?.readyState === WebSocket.OPEN) {
-          // Track when pitch_timer_ended is injected
+          // Track when pitch_timer_ended is injected — guard against duplicates
           if (msg.text?.includes('pitch_timer_ended')) {
+            if (pitchTimerInjected) {
+              console.log('[VoiceWS] pitch_timer_ended already injected — ignoring duplicate');
+              return;
+            }
             pitchTimerInjected = true;
             pitchEndTimestamp = Date.now();
           }
@@ -872,11 +1037,21 @@ export function setupVoiceWebSocket(server: http.Server): void {
               },
             })
           );
+        } else if (msg.type === 'pitch_duration') {
+          frontendPitchData = {
+            pitchDurationSeconds: msg.actualDurationSeconds ?? 0,
+            exceededTarget: msg.exceededTarget ?? false,
+            secondsOver: msg.secondsOver ?? 0,
+            secondsUnder: msg.secondsUnder ?? 0,
+          };
+          console.log(`[Pitch] Duration received: ${Math.round(frontendPitchData.pitchDurationSeconds)}s (exceeded: ${frontendPitchData.exceededTarget})`);
         } else if (msg.type === 'skip_qa' && isInitialized) {
           console.log('[VoiceWS] skip_qa received — triggering injectQaComplete');
           injectQaComplete();
         } else if (msg.type === 'end_session') {
           sessionEndRequested = true;
+          clearStallTimers();
+          if (qaCompleteTimer) { clearTimeout(qaCompleteTimer); qaCompleteTimer = null; }
           // If snapshot not yet frozen (e.g. user ends early), freeze now
           if (!simulationSnapshot) {
             freezeSnapshot();
@@ -894,6 +1069,9 @@ export function setupVoiceWebSocket(server: http.Server): void {
     });
 
     clientWs.on('close', () => {
+      if (qaCompleteTimer) { clearTimeout(qaCompleteTimer); qaCompleteTimer = null; }
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      clearStallTimers();
       geminiWs?.close();
     });
 
