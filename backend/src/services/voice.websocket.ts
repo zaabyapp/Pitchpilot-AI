@@ -727,6 +727,9 @@ export function setupVoiceWebSocket(server: http.Server): void {
                 silenceDurationMs: 500,
               },
             },
+            contextWindowCompression: {
+              slidingWindow: {},
+            },
           },
         };
         console.log('[VoiceWS] Sending setup:', JSON.stringify(setupMsg, null, 2));
@@ -772,6 +775,13 @@ export function setupVoiceWebSocket(server: http.Server): void {
           if (msg.error) {
             console.error('[VoiceWS] Gemini API error:', JSON.stringify(msg.error));
             sendToClient({ type: 'error', message: `Gemini API error: ${msg.error.message ?? msg.error.status ?? 'unknown'}` });
+            return;
+          }
+
+          // Handle GoAway message — Gemini is about to disconnect
+          if (msg.goAway) {
+            console.log('[VoiceWS] Received GoAway from Gemini, time left:', msg.goAway.timeLeft);
+            sendToClient({ type: 'connection_warning', message: 'Connection will close soon', timeLeft: msg.goAway.timeLeft });
             return;
           }
 
